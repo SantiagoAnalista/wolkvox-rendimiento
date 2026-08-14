@@ -1,0 +1,8 @@
+.env
+src/data/*.csv
+src/output/*.xlsx
+logs/*.log
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

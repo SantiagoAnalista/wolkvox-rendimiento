@@ -1,0 +1,40 @@
+# --- Entornos virtuales ---
+.venv/
+venv/
+env/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Secretos / configuración local ---
+.env
+.env.local
+
+# --- Datos y reportes (nunca se versionan) ---
+*.xlsx
+*.xls
+*.csv
+
+# --- Logs ---
+logs/*.log
+*.log
+
+# --- Herramientas locales ---
+.claude/settings.local.json
+
+# --- Sistema operativo / editores ---
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Temporales de Office ---
+~$*

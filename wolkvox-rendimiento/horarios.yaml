@@ -1,0 +1,68 @@
+# Reglas de negocio del informe de gestión. Nada de esto está en el código.
+
+# Minutos de gracia. Con 3: entrar 8:03 está bien, 8:04 es tarde.
+# Se aplica igual a la salida: salir 16:57 está bien, 16:56 es temprano.
+tolerancia_min: 3
+
+# Un asesor con menos días trabajados que esto queda FUERA de los promedios
+# generales, aunque sigue apareciendo en el detalle marcado 'Activo: No'.
+# Se define por modo de ejecución: exigir 5 días en un informe diario dejaría
+# a todo el mundo fuera.
+minimo_dias_actividad:
+  mes: 5
+  semana: 2
+  dia: 1
+
+# --- Asesores del informe -----------------------------------------------
+# Solo estos entran al análisis. El resto (cuentas de prueba, puntos de
+# enrutamiento, personal de otras áreas) se ignora por completo.
+agentes:
+  - "ALZATE VALENCIA CAROLINA"
+  - "FLOREZ ESPINAL SERGIO ANTONIO"
+  - "GOMEZ SANCHEZ YEISON ESNEIDER"
+  - "VILLA NOREÑA LAURA VALENTINA"
+  - "CARDONA GARCIA MARIA ALEJANDRA"
+
+# --- Horarios reales ------------------------------------------------------
+# Se leen de los Excel de la operación. El mes de cada hoja se deduce
+# validando los nombres de día contra el calendario real, así que una hoja
+# mal fechada falla en vez de producir tardanzas falsas.
+archivos_horario:
+  - ruta: "src/data/Horarios JULIO - Auto - Wolkvox.xlsx"
+    # 'Ajustados final 1 vuelta' es en realidad el cronograma de JUNIO; se
+    # incluye porque su último bloque cubre el 1, 2 y 3 de julio, días que
+    # la hoja 'JULIO' no trae (empieza el 6).
+    hojas: ["JULIO", "Ajustados final 1 vuelta "]
+  - ruta: "src/data/Horarios AGOSTO -AUT Wolkvox.xlsx"
+    hojas: ["AGOSTO"]
+
+# Cada bloque del Excel cubre a un grupo de asesores.
+grupos:
+  "SERGIO-YEISON-LAURA":
+    - "FLOREZ ESPINAL SERGIO ANTONIO"
+    - "GOMEZ SANCHEZ YEISON ESNEIDER"
+    - "VILLA NOREÑA LAURA VALENTINA"
+  "CAROLINA -ALEJANDRA":
+    - "ALZATE VALENCIA CAROLINA"
+    - "CARDONA GARCIA MARIA ALEJANDRA"
+
+# Horario de respaldo, solo para fechas que los Excel no cubran. Si aparece
+# usado en el informe, es señal de que falta cargar un cronograma.
+por_defecto:
+  lunes:     ["08:00", "17:00"]
+  martes:    ["08:00", "17:00"]
+  miercoles: ["08:00", "17:00"]
+  jueves:    ["08:00", "17:00"]
+  viernes:   ["08:00", "17:00"]
+  sabado:    ["08:00", "12:00"]
+
+# Fechas sin operación. Los Excel ya marcan sus festivos como día no laboral;
+# esto es para cierres que no estén en el cronograma.
+festivos: []
+
+# A partir de qué valor se marca una alerta en "Gestión vs efectividad".
+umbrales:
+  ready_alto: 50          # % del tiempo disponible pero sin gestionar
+  auxiliar_alto: 30       # % del tiempo en pausas
+  sin_tipificar_alto: 30  # % de gestiones que el agente nunca codificó
+  efectividad_baja: 10    # % de efectividad por debajo del cual se señala

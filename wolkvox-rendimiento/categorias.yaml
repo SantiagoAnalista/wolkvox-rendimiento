@@ -1,0 +1,31 @@
+# Mapeo de "categoría de negocio". Se editan estos valores sin tocar código.
+#
+# Wolkvox no entrega un único campo "efectiva / colgada / no contactada".
+# Se evalúan dos fuentes independientes:
+#   - conectadas: llamadas SÍ conectadas (cdr_1), categorizadas por el código
+#     de tipificación que el agente le da a la llamada (campo 'cod_act').
+#   - no_conectadas: intentos que NO llegaron a conectar (cdr_5), categorizados
+#     por el resultado técnico que reporta la red (campo 'result').
+#
+# Cualquier valor que no aparezca aquí cae en "sin_clasificar" (no se pierde,
+# solo queda visible en el reporte para decidir cómo tipificarlo).
+
+conectadas:
+  # Códigos de tipificación (cod_act) definidos por la operación en
+  # wolkvox Manager > Configuración > Códigos de actividad.
+  # ⚠️ Los códigos de ejemplo de abajo son ilustrativos: reemplazar por el
+  # inventario real de códigos de esta operación antes de publicar el reporte.
+  VENTA: efectiva
+  GESTION_EXITOSA: efectiva
+  NO_INTERES: colgada_por_cliente
+  TIMEOUTACW: sin_tipificar
+
+no_conectadas:
+  # Valores fijos que documenta Wolkvox para el campo 'result' de cdr_5/cdr_6.
+  cancel: no_contactada
+  chanunavail: no_contactada
+  congestion: no_contactada
+  busy: no_contactada
+  "no answer": no_acepta
+  tcpa: no_contactada
+  "do not call": no_contactada

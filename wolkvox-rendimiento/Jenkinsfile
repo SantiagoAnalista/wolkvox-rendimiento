@@ -1,0 +1,94 @@
+// Informe de gestión de asesores — Wolkvox
+//
+// Un solo Jenkinsfile cubre los tres modos. Sin fechas, cada corrida procesa
+// el último periodo YA CERRADO según PERIODO, así que el cron no lleva fechas
+// cableadas: en agosto el job mensual saca julio solo.
+//
+// Para programarlo, crear un job por modo apuntando a este mismo Jenkinsfile
+// y fijar PERIODO en cada uno:
+//    mensual  ->  H 6 1 * *     (día 1 de cada mes)
+//    semanal  ->  H 6 * * 1     (todos los lunes)
+//    diario   ->  H 6 * * 2-7   (martes a domingo, procesa el día anterior)
+
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'PERIODO', choices: ['mes', 'semana', 'dia'],
+               description: 'Agrupación del informe: se genera un Excel por periodo.')
+        string(name: 'DESDE', defaultValue: '',
+               description: 'YYYY-MM-DD. Vacío = último periodo cerrado (lo normal en corridas programadas).')
+        string(name: 'HASTA', defaultValue: '',
+               description: 'YYYY-MM-DD. Vacío = hasta hoy. Solo aplica si DESDE tiene valor.')
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        disableConcurrentBuilds()   // el token de Wolkvox no admite corridas en paralelo
+    }
+
+    environment {
+        WOLKVOX_TOKEN  = credentials('wolkvox-token-prod')
+        WOLKVOX_SERVER = '0010'
+        PYTHONIOENCODING = 'utf-8'   // los nombres de agente llevan tildes y ñ
+    }
+
+    stages {
+        stage('Preparar entorno') {
+            steps {
+                bat '''
+                    python -m venv .venv
+                    .venv\\Scripts\\python -m pip install --quiet --upgrade pip
+                    .venv\\Scripts\\python -m pip install --quiet -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Pruebas') {
+            steps {
+                // No consumen API: si algo se rompió, mejor saberlo antes de
+                // gastar tokens y de publicar cifras equivocadas.
+                bat '.venv\\Scripts\\python -m pytest -q'
+            }
+        }
+
+        stage('Generar informe') {
+            steps {
+                script {
+                    def args = "--analisis --periodo ${params.PERIODO}"
+                    if (params.DESDE?.trim()) {
+                        args += " --desde ${params.DESDE.trim()}"
+                        if (params.HASTA?.trim()) { args += " --hasta ${params.HASTA.trim()}" }
+                    }
+                    bat ".venv\\Scripts\\python main.py ${args}"
+                }
+            }
+        }
+
+        stage('Publicar') {
+            steps {
+                archiveArtifacts artifacts: 'src/output/*.xlsx',
+                                 fingerprint: true, onlyIfSuccessful: true
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'logs/*.log', allowEmptyArchive: true
+        }
+        failure {
+            emailext(
+                subject: "Wolkvox: falló el informe de gestión (${params.PERIODO}) — build #${env.BUILD_NUMBER}",
+                body: """La corrida falló. Revisar el log del build: ${env.BUILD_URL}console
+
+Causas frecuentes:
+  - Token vencido o rotado en wolkvox Manager
+  - La API no responde (wv${env.WOLKVOX_SERVER}.wolkvox.com sin respuesta)
+  - Falta cargar el cronograma del mes en src/data/Horarios *.xlsx
+""",
+                to: 'operaciones@empresa.com')
+        }
+    }
+}
