@@ -252,6 +252,63 @@ Los umbrales del semáforo salen de `horarios.yaml` y se muestran impresos en
 cada columna (`meta ≤ 30 %`), porque un semáforo cuyo umbral nadie conoce no
 sirve para nada.
 
+## Corridas intradía
+
+Coordinación monitorea la operación durante el día, así que además del diario y
+el semanal hay ocho corridas de jornada en curso:
+
+```bash
+python main.py --analisis --periodo dia --hoy
+```
+
+`--hoy` fija la ventana en `00:00 → ahora`. Cortes: **08:10, 08:40, 09:10,
+09:40, 12:10, 14:10, 16:10 y 18:10** — a los diez minutos en punto para que el
+login del turno ya esté registrado cuando la corrida lo lee.
+
+Cada corte **regenera todo**: login, tiempos, auxiliares, llamadas y digital. No
+hay extracción parcial ni acumulación de estado; es preferible gastar consumos y
+tener la certeza de que nada quedó viejo. Son ~8 consumos por corrida, ~65 al día.
+
+**La nómina manda.** `asistencia.detalle()` enumera los asesores desde
+`horarios.yaml`, no desde los datos de login. Quien no se ha conectado aparece
+con su fila marcada en vez de desaparecer del informe — si el ausente es
+invisible, el coordinador ve "todo bien" justo cuando hay algo que atender. Es
+lo que hace útil el corte de las 08:10. Aplica igual al Excel: un asesor sin
+actividad en todo el periodo sale con `Activo: No` y no mueve ningún promedio.
+
+Una jornada sin ningún login no aborta la corrida: publica la nómina completa
+sin conexión, que es exactamente la información que se necesita a esa hora.
+
+### Por qué cada corte escribe un archivo nuevo
+
+En Windows, un `.xlsx` abierto por alguien queda tomado y `wb.save()` falla. Con
+ocho corridas al día y coordinación consultando el detalle, eso pasa. La
+solución no es manejar el error sino que la colisión no pueda ocurrir:
+
+```
+analisis_gestion_2026-08-17_0810.xlsx
+analisis_gestion_2026-08-17_1210.xlsx
+analisis_gestion_2026-08-17_1610.xlsx   <- el corte actual
+analisis_gestion_2026-08-16.xlsx        <- ayer, consolidado
+```
+
+Nadie puede tener abierto un archivo que hace un segundo no existía. El tablero
+enlaza al Excel del corte que está mostrando, así que el nombre largo no le
+estorba a nadie.
+
+`excel_purga.limpiar()` corre en cada ejecución y hace dos cosas: consolida los
+días ya cerrados —conserva un solo archivo por fecha y borra sus demás cortes— y
+aplica la retención de `DIAS_EXCEL`. Un día se da por cerrado si es anterior a
+hoy, si ya tiene su consolidado o si alguno de sus cortes es de
+`HORA_CIERRE_JORNADA` en adelante; así la corrida de las 18:10 limpia las
+anteriores sin bandera especial, y si esa corrida falla, cualquier ejecución
+posterior termina el trabajo. Un borrado que falla porque alguien tiene el
+archivo abierto se registra y se salta.
+
+El tablero, en cambio, no corre ese riesgo: los navegadores leen el HTML y
+sueltan el archivo. Aun así la escritura reintenta tres veces, porque el
+antivirus o el indexador de Windows sí pueden retenerlo un instante.
+
 ## Despliegue en Jenkins
 
 El `Jenkinsfile` de la raíz cubre los tres modos con un parámetro `PERIODO`.

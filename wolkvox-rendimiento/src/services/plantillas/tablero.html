@@ -330,12 +330,25 @@ function vacio(txt) {
 const pill = (k, txt, glifo) => `<span class="pill ${k}"><span class="g">${glifo}</span>${esc(txt)}</span>`;
 
 /* ── Estado de puntualidad ───────────────────────────────────────── */
+const HHMM = s => { const [a, b] = String(s).split(":"); return (+a) * 60 + (+b); };
+/** Minuto del día en que arranca la jornada pactada ("08:00-17:00"). */
+const inicioJornada = fila => HHMM(String(fila["Horario"] || "08:00-17:00").split("-")[0]);
+
 /* `Estado` puede venir como "Tarde", "Temprano", "Tarde y Temprano", "OK"
-   o "Sin conexión"; hay que comprobar por inclusión, no por igualdad. */
-function estadoPunt(fila, U) {
+   o "Sin conexión"; hay que comprobar por inclusión, no por igualdad.
+   `corteMin` solo llega en una jornada en curso: ahí "sin conexión" todavía
+   no es una ausencia, es que la corrida se adelantó al asesor. */
+function estadoPunt(fila, U, corteMin = null) {
   const e = String(fila["Estado"] ?? "");
   const min = num(fila["Min tarde"]) || 0;
-  if (e.includes("Sin conexión")) return { k: "nu", tok: null, glifo: "–", txt: "Sin conexión" };
+  if (e.includes("Sin conexión")) {
+    if (corteMin == null) return { k: "nu", tok: null, glifo: "–", txt: "Sin conexión" };
+    const retraso = Math.round(corteMin - inicioJornada(fila));
+    if (retraso <= U.tolerancia_min) return { k: "nu", tok: null, glifo: "·", txt: "Aún sin conectar" };
+    return retraso > U.tarde_grave_min
+      ? { k: "cr", tok: "--crit", glifo: "✕", txt: `Sin conectar · ${retraso} min` }
+      : { k: "wa", tok: "--warn", glifo: "!", txt: `Sin conectar · ${retraso} min` };
+  }
   if (e.includes("Tarde")) {
     const grave = min > U.tarde_grave_min;
     const extra = e.includes("Temprano") ? " y salió temprano" : "";
@@ -474,21 +487,27 @@ function chartCalendario(detalle, U) {
 }
 
 /* ══ Conexión del día ═════════════════════════════════════════════ */
-function panelConexion(detalle, U) {
+function panelConexion(detalle, U, corteMin = null) {
   const c = card("half", "Conexión del día",
-    `Entrada real contra el horario asignado. Tolerancia de ${U.tolerancia_min} minutos.`);
+    corteMin == null
+      ? `Entrada real contra el horario asignado. Tolerancia de ${U.tolerancia_min} minutos.`
+      : `Nómina completa contra el horario asignado. Tolerancia de ${U.tolerancia_min} minutos.`);
   if (!detalle.length) { c.appendChild(vacio("Sin días laborales evaluados.")); return c; }
 
   const orden = { cr: 0, wa: 1, se: 2, nu: 3, ok: 4 };
-  const filas = detalle.map(r => ({ r, st: estadoPunt(r, U) }))
+  const filas = detalle.map(r => ({ r, st: estadoPunt(r, U, corteMin) }))
     .sort((a, b) => orden[a.st.k] - orden[b.st.k] || corto(a.r.Agente).localeCompare(corto(b.r.Agente)));
 
-  const pend = filas.filter(f => f.st.k !== "ok").length;
+  const atender = filas.filter(f => f.st.k === "cr" || f.st.k === "wa").length;
+  const espera = filas.filter(f => f.st.k === "nu").length;
   const res = document.createElement("p");
   res.className = "sub"; res.style.marginTop = "10px";
-  res.innerHTML = pend
-    ? `<b style="color:var(--ink)">${pend} de ${filas.length}</b> asesores con novedad en la jornada.`
-    : `<b style="color:var(--ink)">Los ${filas.length} asesores</b> cumplieron horario.`;
+  const fuerte = t => `<b style="color:var(--ink)">${t}</b>`;
+  res.innerHTML = atender
+    ? `${fuerte(`${atender} de ${filas.length}`)} asesores requieren atención en este corte.`
+    : espera
+      ? `Nadie fuera de tolerancia todavía: ${fuerte(espera)} aún no se conecta, dentro de los ${U.tolerancia_min} minutos de gracia.`
+      : `${fuerte(`Los ${filas.length} asesores`)} cumplieron horario.`;
   c.appendChild(res);
 
   const w = document.createElement("div");
@@ -720,6 +739,30 @@ function kpi({ label, valor, unidad, delta, deltaLabel, meta, mejorEs }) {
 }
 
 /* ══ Render de un periodo ═════════════════════════════════════════ */
+/* El foco cambia con la hora del corte: a las 08:10 no hay produccion que
+   medir y la unica pregunta es si el equipo esta completo; a las 14:10 la
+   pregunta es quien no volvio del almuerzo. Se elige el ultimo foco cuya
+   hora de arranque ya paso, para que sirva a cualquier hora de corrida. */
+const FOCOS = [
+  { desde: 0, t: "Arranque de jornada",
+    p: "Quién está conectado y quién no. Todavía no hay producción que medir: la única pregunta es si el equipo está completo." },
+  { desde: 8 * 60 + 25, t: "Rezagados",
+    p: "Consumida la gracia de entrada. Quien siga sin conectarse ya es una ausencia, no un retraso: toca llamar, no anotar." },
+  { desde: 8 * 60 + 55, t: "Confirmación de asistencia",
+    p: "La jornada ya debería estar completa. Lo que aparezca sin conexión a esta hora se reporta hoy, no en el informe del lunes." },
+  { desde: 9 * 60 + 25, t: "Primera hora cerrada",
+    p: "Cierra la primera hora de producción. Sirve para detectar a quien entró pero no arrancó." },
+  { desde: 11 * 60, t: "Salida a almuerzo",
+    p: "Control de cobertura: cuántos salieron a la vez y cuántos quedan en línea. El riesgo no es que almuercen, es que almuercen todos juntos." },
+  { desde: 13 * 60 + 30, t: "Regreso de almuerzo",
+    p: "Quién excedió el tiempo de almuerzo y quién no ha vuelto a estado productivo. Es el corte donde más pesa el detalle de auxiliares." },
+  { desde: 15 * 60 + 30, t: "Avance de gestión",
+    p: "Queda poca jornada. Con el acumulado del día se ve si la meta es alcanzable o si hay que redistribuir base ahora mismo." },
+  { desde: 17 * 60 + 30, t: "Cierre del día",
+    p: "Jornada completa. El foco pasa a lo pendiente: gestiones sin tipificar y salidas anticipadas, que es lo que se corrige mañana." },
+];
+const focoDe = min => FOCOS.reduce((elegido, f) => (min >= f.desde ? f : elegido), FOCOS[0]);
+
 const NOMBRE_TIPO = { dia: "Día", semana: "Semana", mes: "Mes" };
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -749,18 +792,26 @@ function render(p) {
     return (a == null || b == null) ? null : a - b;
   };
 
+  const corteMin = p.corte ? HHMM(p.corte) : null;
+
   // ── Foco ──
-  $("#foco-t").textContent = p.titulo || p.etiqueta;
   const cruce = C.cruce || [];
   const conAlerta = cruce.filter(r => String(r.Alerta || "").trim()).length;
-  if (cruce.length) {
-    const peor = [...cruce].sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))[0];
-    $("#foco-p").textContent =
-      `${conAlerta} de ${cruce.length} asesores traen alerta. El caso más marcado es ${corto(peor.Agente)}: ` +
-      `${fmt(num(peor["% Efectividad total"]))} % de efectividad con ${fmt(num(peor["Ocupación %"]))} % de ocupación. ` +
-      `El problema transversal del periodo es el registro: ${K["% Sin tipificar"] ?? "—"} de las gestiones no quedan tipificadas.`;
+  if (corteMin != null) {
+    const f = focoDe(corteMin);
+    $("#foco-t").textContent = `${p.corte} · ${f.t}`;
+    $("#foco-p").textContent = f.p;
   } else {
-    $("#foco-p").textContent = "Sin gestión registrada en el periodo.";
+    $("#foco-t").textContent = p.titulo || p.etiqueta;
+    if (cruce.length) {
+      const peor = [...cruce].sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))[0];
+      $("#foco-p").textContent =
+        `${conAlerta} de ${cruce.length} asesores traen alerta. El caso más marcado es ${corto(peor.Agente)}: ` +
+        `${fmt(num(peor["% Efectividad total"]))} % de efectividad con ${fmt(num(peor["Ocupación %"]))} % de ocupación. ` +
+        `El problema transversal del periodo es el registro: ${K["% Sin tipificar"] ?? "—"} de las gestiones no quedan tipificadas.`;
+    } else {
+      $("#foco-p").textContent = "Sin gestión registrada en el periodo.";
+    }
   }
 
   // ── KPIs ──
@@ -781,7 +832,7 @@ function render(p) {
   const g = $("#grid");
   g.innerHTML = "";
   if (p.periodo === "dia") {
-    g.appendChild(panelConexion(C.puntualidad_detalle || [], U));
+    g.appendChild(panelConexion(C.puntualidad_detalle || [], U, corteMin));
     g.appendChild(chartCurva(C.curva_horaria || []));
   } else {
     g.appendChild(chartCalendario(C.puntualidad_detalle || [], U));
@@ -792,13 +843,22 @@ function render(p) {
   g.appendChild(semaforo(cruce, C.puntualidad_agente || [], U));
 
   // ── Cabecera y pie ──
-  $("#meta").innerHTML = `Periodo <b>${esc(p.etiqueta)}</b><br>` +
-    `Detalle completo: <a href="analisis_gestion_${esc(p.etiqueta)}.xlsx">analisis_gestion_${esc(p.etiqueta)}.xlsx</a><br>` +
-    `Generado <b>${esc(p.generado || DATA.generado || "")}</b>`;
+  const enlace = p.archivo_excel
+    ? `Detalle completo: <a href="${esc(p.archivo_excel)}">${esc(p.archivo_excel)}</a>`
+    : `<span style="color:var(--muted)">La maestra de este periodo ya salió de la retención</span>`;
+  $("#meta").innerHTML =
+    (corteMin != null
+      ? `Jornada en curso · <b>corte ${esc(p.corte)}</b>`
+      : `Periodo <b>${esc(p.etiqueta)}</b>`) +
+    `<br>${enlace}<br>Generado <b>${esc(p.generado || DATA.generado || "")}</b>`;
   $("#pie").innerHTML =
+    (corteMin != null
+      ? `<p>Estas cifras son una foto del corte de las ${esc(p.corte)}, no dato en vivo. ` +
+        `La siguiente corrida las reemplaza.</p>`
+      : "") +
     `<p>El Excel sigue siendo la fuente auditable: este tablero solo presenta las mismas cifras. ` +
     `Si un número difiere entre los dos, manda el Excel y hay un error de presentación que reportar.</p>` +
-    `<p>Corrida: <code>main.py --analisis --periodo ${esc(p.periodo)}</code> · ` +
+    `<p>Corrida: <code>main.py --analisis --periodo ${esc(p.periodo)}${corteMin != null ? " --hoy" : ""}</code> · ` +
     `Tolerancia de horario: ${U.tolerancia_min} min · Periodos en el histórico: ${PERIODOS.length}</p>`;
   tipOff();
 }

@@ -72,7 +72,8 @@ def _indicadores(df: pd.DataFrame | None) -> dict:
 
 def construir(cuadros: dict[str, pd.DataFrame], metadatos: dict, etiqueta: str,
               periodo: str, desde, hasta, umbrales: dict,
-              tolerancia_min: int) -> dict:
+              tolerancia_min: int, corte: str | None = None,
+              archivo_excel: str | None = None) -> dict:
     """Arma el payload de un periodo a partir de los MISMOS cuadros que
     alimentan el Excel. Esta función no calcula indicadores: solo selecciona,
     aplana y serializa. Cualquier cifra nueva se agrega en gestion.py o
@@ -87,6 +88,11 @@ def construir(cuadros: dict[str, pd.DataFrame], metadatos: dict, etiqueta: str,
         "hasta": hasta.isoformat(),
         "titulo": metadatos.get("Periodo", etiqueta),
         "generado": metadatos.get("Generado", ""),
+        # `corte` marca una jornada en curso: el tablero rotula la hora del
+        # corte para que nadie lea una foto de mediodía como dato en vivo.
+        "corte": corte,
+        "parcial": bool(corte),
+        "archivo_excel": archivo_excel,
         "umbrales": {
             "tolerancia_min": tolerancia_min,
             "auxiliar_alto": umbrales.get("auxiliar_alto", 30),

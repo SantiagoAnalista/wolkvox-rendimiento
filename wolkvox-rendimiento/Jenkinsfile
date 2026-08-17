@@ -1,14 +1,19 @@
 // Informe de gestión de asesores — Wolkvox
 //
-// Un solo Jenkinsfile cubre los tres modos. Sin fechas, cada corrida procesa
+// Un solo Jenkinsfile cubre los cuatro modos. Sin fechas, cada corrida procesa
 // el último periodo YA CERRADO según PERIODO, así que el cron no lleva fechas
 // cableadas: en agosto el job mensual saca julio solo.
 //
-// Para programarlo, crear un job por modo apuntando a este mismo Jenkinsfile
-// y fijar PERIODO en cada uno:
-//    mensual  ->  H 6 1 * *     (día 1 de cada mes)
-//    semanal  ->  H 6 * * 1     (todos los lunes)
-//    diario   ->  H 6 * * 2-7   (martes a domingo, procesa el día anterior)
+// Para programarlo, crear un job por modo apuntando a este mismo Jenkinsfile:
+//
+//    mensual   PERIODO=mes                 H 6 1 * *     (día 1 de cada mes)
+//    semanal   PERIODO=semana              H 6 * * 1     (todos los lunes)
+//    diario    PERIODO=dia                 H 6 * * 2-7   (procesa el día anterior)
+//    intradía  PERIODO=dia, HOY=true       10,40 8,9 * * 1-6
+//                                          10 12,14,16,18 * * 1-6
+//
+// El job diario corre de martes a domingo a propósito: el lunes procesaría el
+// domingo, que no es día operativo.
 
 pipeline {
     agent any
@@ -16,6 +21,8 @@ pipeline {
     parameters {
         choice(name: 'PERIODO', choices: ['mes', 'semana', 'dia'],
                description: 'Agrupación del informe: se genera un Excel por periodo.')
+        booleanParam(name: 'HOY', defaultValue: false,
+               description: 'Jornada en curso, hasta la hora actual. Es el modo de las corridas intradía (requiere PERIODO=dia).')
         string(name: 'DESDE', defaultValue: '',
                description: 'YYYY-MM-DD. Vacío = último periodo cerrado (lo normal en corridas programadas).')
         string(name: 'HASTA', defaultValue: '',
@@ -24,8 +31,8 @@ pipeline {
 
     options {
         timeout(time: 45, unit: 'MINUTES')
-        buildDiscarder(logRotator(numToKeepStr: '30'))
-        disableConcurrentBuilds()   // el token de Wolkvox no admite corridas en paralelo
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        disableConcurrentBuilds()   // no basta: ver el lock del token más abajo
     }
 
     environment {
@@ -62,13 +69,24 @@ pipeline {
 
         stage('Generar informe') {
             steps {
-                script {
-                    def args = "--analisis --periodo ${params.PERIODO}"
-                    if (params.DESDE?.trim()) {
-                        args += " --desde ${params.DESDE.trim()}"
-                        if (params.HASTA?.trim()) { args += " --hasta ${params.HASTA.trim()}" }
+                // El token de Wolkvox no admite consumos en paralelo, y
+                // disableConcurrentBuilds() solo protege dentro de un job. Con
+                // ocho corridas intradía más la semanal del lunes, dos jobs
+                // pisándose deja de ser hipotético: lo que hay que bloquear es
+                // el token, no el job.
+                // Requiere el plugin 'lockable-resources' y declarar el recurso
+                // 'wolkvox-token' en Manage Jenkins -> Lockable Resources.
+                lock(resource: 'wolkvox-token') {
+                    script {
+                        def args = "--analisis --periodo ${params.PERIODO}"
+                        if (params.HOY) {
+                            args += " --hoy"
+                        } else if (params.DESDE?.trim()) {
+                            args += " --desde ${params.DESDE.trim()}"
+                            if (params.HASTA?.trim()) { args += " --hasta ${params.HASTA.trim()}" }
+                        }
+                        bat ".venv\\Scripts\\python main.py ${args}"
                     }
-                    bat ".venv\\Scripts\\python main.py ${args}"
                 }
             }
         }

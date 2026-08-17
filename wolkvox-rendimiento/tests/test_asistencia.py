@@ -131,6 +131,77 @@ def test_solo_se_evaluan_los_agentes_del_informe():
     assert list(det["Agente"]) == ["Ana"]
 
 
+def test_la_nomina_manda_el_ausente_total_no_desaparece():
+    """Antes, quien no se conectaba en todo el periodo no salía en el informe.
+    Un asesor invisible hace que el coordinador vea 'todo bien' justo cuando
+    hay algo que atender."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 12))
+    assert sorted(det["Agente"]) == ["Ana", "BETO"]
+    beto = det[det["Agente"] == "BETO"].iloc[0]
+    assert beto["Sin conexión"]
+    assert beto["Estado"] == "Sin conexión"
+
+
+def test_sin_ningun_login_igual_sale_la_nomina_completa():
+    """El corte de las 08:10: puede que todavía no se haya conectado nadie, y
+    eso es exactamente lo que el coordinador necesita ver."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    det = asistencia.detalle(pd.DataFrame(), horarios,
+                             date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 10))
+    assert len(det) == 2
+    assert det["Sin conexión"].all()
+    assert list(det["Horario"]) == ["08:00-18:00", "08:00-18:00"]
+
+
+def test_un_dia_sin_jornada_para_nadie_devuelve_vacio_sin_reventar():
+    """Festivo, domingo o descanso general. Con la nómina como origen se llega
+    al bucle con agentes pero sin filas; hay que devolver un DataFrame vacío,
+    no un sort_values sobre un frame sin columnas."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"], "festivos": {"2026-08-10"}}
+    det = asistencia.detalle(pd.DataFrame(), horarios,
+                             date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 10))
+    assert det.empty
+
+
+def test_el_nombre_de_display_de_la_api_gana_sobre_el_de_la_nomina():
+    """La nómina está normalizada (mayúsculas, sin tildes); la API trae el
+    nombre real. Si se mezclaran, el asesor saldría dos veces."""
+    horarios = {**HORARIOS, "agentes": ["VILLA NORENA LAURA"]}
+    df = _logueo([{"agent_id": "1", "agent_name": "VILLA NOREÑA  LAURA", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 12))
+    assert list(det["Agente"]) == ["VILLA NOREÑA  LAURA"]
+    assert not det.loc[0, "Sin conexión"]
+
+
+def test_sin_nomina_configurada_se_enumeran_los_agentes_de_los_datos():
+    """Comportamiento anterior: sin nómina no hay contra qué contrastar."""
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
+    det = asistencia.detalle(df, HORARIOS, date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 12))
+    assert list(det["Agente"]) == ["Ana"]
+
+
+def test_el_ausente_total_no_mueve_los_promedios_de_la_operacion():
+    """Queda marcado 'Activo: No' y solo suma al contador de excluidos."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:30:00", "logout": "2026-08-10 18:00:00"}])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10), hoy=date(2026, 8, 12))
+    res = asistencia.por_agente(det, minimo_dias=1).set_index("Agente")
+    assert res.loc["BETO", "Activo"] == "No"
+    assert res.loc["Ana", "Activo"] == "Sí"
+
+    general = asistencia.general(res.reset_index())
+    gen = dict(zip(general["Indicador"], general["Valor"]))
+    assert gen["Asesores activos evaluados"] == 1
+    assert gen["Asesores excluidos (baja actividad)"] == 1
+    assert gen["% Entradas tarde (operación)"] == "100.0 %"   # 1 de 1 día trabajado
+
+
 def test_porcentaje_excluye_dias_sin_conexion():
     """1 de 2 días trabajados con tardanza = 50 %, no 33 % sobre 3 laborales."""
     df = _logueo([

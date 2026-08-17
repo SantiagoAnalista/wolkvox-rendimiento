@@ -207,3 +207,93 @@ def test_la_plantilla_del_repo_existe_y_es_autocontenida():
     html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
     assert tablero_html.MARCADOR in html
     assert "src=\"http" not in html and "href=\"http" not in html
+
+
+# ── Cortes intradía ──────────────────────────────────────────────────────
+
+def test_sin_corte_el_periodo_no_es_parcial():
+    p = construir()
+    assert p["corte"] is None
+    assert p["parcial"] is False
+
+
+def test_con_corte_el_periodo_queda_marcado_como_parcial():
+    """El tablero rotula la hora para que nadie lea una foto de mediodía
+    como dato en vivo."""
+    p = tablero_datos.construir(cuadros_minimos(), METADATOS, "2026-08-17", "dia",
+                                date(2026, 8, 17), date(2026, 8, 17), UMBRALES, 3,
+                                corte="12:10",
+                                archivo_excel="analisis_gestion_2026-08-17_1210.xlsx")
+    assert p["corte"] == "12:10"
+    assert p["parcial"] is True
+    assert p["archivo_excel"] == "analisis_gestion_2026-08-17_1210.xlsx"
+
+
+def test_los_cortes_del_dia_reescriben_el_mismo_periodo(tmp_path):
+    """Ocho corridas al día dejan un solo JSON por fecha, no ocho."""
+    for hora in ("08:10", "12:10", "18:10"):
+        tablero_datos.guardar(
+            tablero_datos.construir(cuadros_minimos(), METADATOS, "2026-08-17", "dia",
+                                    date(2026, 8, 17), date(2026, 8, 17), UMBRALES, 3,
+                                    corte=hora), tmp_path)
+    cargados = tablero_datos.cargar_todos(tmp_path)
+    assert len(cargados) == 1
+    assert cargados[0]["corte"] == "18:10"
+
+
+# ── Enlace a la maestra ──────────────────────────────────────────────────
+
+def test_se_conserva_el_enlace_cuando_la_maestra_sigue_vigente(tmp_path):
+    p = construir()
+    p["archivo_excel"] = "analisis_gestion_2026-S32.xlsx"
+    html = tablero_html.generar([p], tmp_path,
+                                excel_vigentes={"analisis_gestion_2026-S32.xlsx"}
+                                ).read_text(encoding="utf-8")
+    assert "analisis_gestion_2026-S32.xlsx" in html
+
+
+def test_se_quita_el_enlace_cuando_la_retencion_ya_borro_la_maestra(tmp_path):
+    """Mejor sin enlace que con un enlace roto."""
+    p = construir()
+    p["archivo_excel"] = "analisis_gestion_2026-S32.xlsx"
+    html = tablero_html.generar([p], tmp_path, excel_vigentes=set()).read_text(encoding="utf-8")
+    assert "analisis_gestion_2026-S32.xlsx" not in html
+
+
+def test_sin_lista_de_vigentes_no_se_toca_el_enlace(tmp_path):
+    p = construir()
+    p["archivo_excel"] = "analisis_gestion_2026-S32.xlsx"
+    html = tablero_html.generar([p], tmp_path).read_text(encoding="utf-8")
+    assert "analisis_gestion_2026-S32.xlsx" in html
+
+
+# ── Reintento de escritura ───────────────────────────────────────────────
+
+def test_reintenta_cuando_el_archivo_esta_momentaneamente_ocupado(tmp_path, monkeypatch):
+    """El antivirus o el indexador pueden retener el archivo un instante."""
+    intentos = {"n": 0}
+    real = tablero_html.os.replace
+
+    def replace_ocupado(origen, destino):
+        intentos["n"] += 1
+        if intentos["n"] < 3:
+            raise PermissionError("el archivo está en uso")
+        return real(origen, destino)
+
+    monkeypatch.setattr(tablero_html.os, "replace", replace_ocupado)
+    monkeypatch.setattr(tablero_html.time, "sleep", lambda _: None)
+
+    destino = tablero_html.generar([construir()], tmp_path)
+    assert intentos["n"] == 3
+    assert destino.exists()
+
+
+def test_si_sigue_ocupado_tras_los_reintentos_la_corrida_falla(tmp_path, monkeypatch):
+    def siempre_ocupado(origen, destino):
+        raise PermissionError("el archivo está en uso")
+
+    monkeypatch.setattr(tablero_html.os, "replace", siempre_ocupado)
+    monkeypatch.setattr(tablero_html.time, "sleep", lambda _: None)
+
+    with pytest.raises(PermissionError):
+        tablero_html.generar([construir()], tmp_path)

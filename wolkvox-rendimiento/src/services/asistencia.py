@@ -109,16 +109,20 @@ def _mmss(minutos) -> str:
     return f"{signo}{total // 60}h {total % 60:02d}m" if total >= 60 else f"{signo}{total}m"
 
 
-def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
-            hoy: date | None = None) -> pd.DataFrame:
-    """Una fila por agente y día laboral del periodo, con su evaluación."""
-    hoy = hoy or date.today()
+COLUMNAS_SESION = ["agente", "fecha", "entrada", "salida", "logueado_seg"]
 
+
+def _sesiones(df_logueo: pd.DataFrame, incluidos: list[str]) -> pd.DataFrame:
+    """Primer login y último logout por agente y día.
+
+    agent_7 suele traer una fila por día, pero si un agente entra y sale
+    varias veces hay que quedarse con los extremos. Devuelve siempre las
+    mismas columnas, incluso sin datos: a las 08:10 puede no haberse
+    conectado nadie todavía y el informe igual tiene que salir.
+    """
     if df_logueo.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=COLUMNAS_SESION)
 
-    # agent_7 suele traer una fila por día, pero si un agente entra y sale
-    # varias veces nos quedamos con el primer login y el último logout.
     df = df_logueo.copy()
     df["login_dt"] = pd.to_datetime(df["login"], errors="coerce")
     df["logout_dt"] = pd.to_datetime(df["logout"], errors="coerce")
@@ -130,13 +134,30 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
 
     # Solo los asesores del informe. Se busca por nombre normalizado porque
     # el Excel y la API difieren en tildes y espacios dobles.
-    incluidos = horarios.get("agentes") or []
     if incluidos:
         sesiones = sesiones[sesiones["agente"].map(normalizar).isin(incluidos)]
-    if sesiones.empty:
+    return sesiones
+
+
+def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
+            hoy: date | None = None) -> pd.DataFrame:
+    """Una fila por agente y día laboral del periodo, con su evaluación."""
+    hoy = hoy or date.today()
+
+    incluidos = horarios.get("agentes") or []
+    sesiones = _sesiones(df_logueo, incluidos)
+
+    # La lista de asesores sale de la NÓMINA, no de los datos de login. Quien
+    # no se ha conectado tiene que aparecer con su fila marcada, no
+    # desaparecer del informe: si el ausente es invisible, el coordinador ve
+    # "todo bien" justo cuando hay algo que atender. Sin nómina configurada se
+    # mantiene el comportamiento anterior (enumerar lo que traigan los datos).
+    presentes = {normalizar(a): a for a in sesiones["agente"].unique()}
+    agentes = sorted(presentes.get(n, n) for n in incluidos) if incluidos \
+        else sorted(presentes.values())
+    if not agentes:
         return pd.DataFrame()
 
-    agentes = sorted(sesiones["agente"].unique())
     tolerancia = horarios["tolerancia_min"]
 
     filas = []
@@ -192,6 +213,13 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 "Estado": " y ".join(etiquetas) if etiquetas else "OK",
             })
             dia += timedelta(days=1)
+
+    if not filas:
+        # Ningún asesor tiene jornada en el rango: festivo, domingo o descanso
+        # de todo el equipo. Con la nómina como origen se llega hasta aquí con
+        # agentes pero sin filas, y sort_values sobre un DataFrame sin columnas
+        # lanzaría KeyError.
+        return pd.DataFrame()
 
     return pd.DataFrame(filas).sort_values(["Agente", "Fecha"]).reset_index(drop=True)
 

@@ -23,8 +23,8 @@ from config.logger_config import setup_logger
 from config.settings import Config, cargar_config
 from src.api import extract
 from src.api.client import WolkvoxClient
-from src.services import (asistencia, backup, gestion, report, reporte_analisis,
-                          tablero_datos, tablero_html, transform)
+from src.services import (asistencia, backup, excel_purga, gestion, report,
+                          reporte_analisis, tablero_datos, tablero_html, transform)
 
 log = logging.getLogger("main")
 
@@ -111,9 +111,13 @@ def ejecutar(dias_atras: int = 0, sin_excel: bool = False) -> int:
 # salen consultando esa semana.
 # ---------------------------------------------------------------------------
 
-def extraer_analisis(cfg: Config, desde: date, hasta: date,
-                     periodo: str = "mes") -> dict[str, pd.DataFrame]:
+def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes",
+                     corte: datetime | None = None) -> dict[str, pd.DataFrame]:
     tramos = extract.partir_periodo(desde, hasta, periodo)
+    if corte:
+        # Jornada en curso: no tiene sentido pedirle a la API hasta las 23:59
+        # de un día que no ha terminado.
+        tramos = [(e, ini, min(fin, corte)) for e, ini, fin in tramos]
     log.info("Rango partido en %d %s(s): %s", len(tramos), periodo, [t[0] for t in tramos])
 
     acumulado: dict[str, list[pd.DataFrame]] = {
@@ -172,7 +176,8 @@ def _titulo_periodo(periodo: str, etiqueta: str, desde: date, hasta: date) -> st
 
 
 def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
-                         desde: date, hasta: date, cfg: Config) -> Path | None:
+                         desde: date, hasta: date, cfg: Config,
+                         corte: datetime | None = None) -> Path | None:
     """Arma y escribe el Excel de un solo periodo (mes, semana o día)."""
     incluidos = horarios["agentes"]
     del_periodo = {k: (v[v["Periodo"] == etiqueta] if not v.empty and "Periodo" in v.columns else v)
@@ -180,7 +185,8 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
 
     detalle = asistencia.detalle(del_periodo["logueo"], horarios, desde, hasta)
     if detalle.empty:
-        log.warning("%s: sin asesores del informe con actividad. Se omite.", etiqueta)
+        log.warning("%s: sin días laborales para los asesores del informe "
+                    "(festivo, domingo o descanso general). Se omite.", etiqueta)
         return None
 
     punt_agente = asistencia.por_agente(detalle, horarios["minimo_dias_actividad"])
@@ -213,8 +219,10 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "curva_horaria": gestion.curva_horaria(filtrar("llamadas")),
     }
 
+    hora_corte = f"{corte:%H:%M}" if corte else None
+    titulo = _titulo_periodo(periodo, etiqueta, desde, hasta)
     metadatos = {
-        "Periodo": _titulo_periodo(periodo, etiqueta, desde, hasta),
+        "Periodo": f"{titulo} · corte {hora_corte}" if hora_corte else titulo,
         "Agrupación": periodo,
         "Asesores": ", ".join(sorted(punt_agente["Agente"])),
         "Horario": "Cronograma real de la operación, leído de los Excel de horarios",
@@ -227,14 +235,19 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "Generado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    destino = reporte_analisis.generar(cuadros, metadatos, cfg.ruta_salida,
-                                       nombre=f"analisis_gestion_{etiqueta}")
+    # Cada corte escribe un archivo NUEVO en vez de sobrescribir: un .xlsx que
+    # alguien tiene abierto no se puede reemplazar en Windows, y así la
+    # colisión no puede darse. excel_purga los consolida al cerrar la jornada.
+    nombre = (excel_purga.nombre_corte(desde, hora_corte) if hora_corte
+              else f"analisis_gestion_{etiqueta}")
+    destino = reporte_analisis.generar(cuadros, metadatos, cfg.ruta_salida, nombre=nombre)
 
     # El tablero se alimenta de los MISMOS cuadros, sin recalcular. Aquí solo
     # se persiste el periodo; el HTML se rearma al final con todo el histórico.
     tablero_datos.guardar(
         tablero_datos.construir(cuadros, metadatos, etiqueta, periodo, desde, hasta,
-                                horarios["umbrales"], horarios["tolerancia_min"]),
+                                horarios["umbrales"], horarios["tolerancia_min"],
+                                corte=hora_corte, archivo_excel=destino.name),
         cfg.ruta_tablero)
     return destino
 
@@ -264,10 +277,11 @@ def _leer_backup(cfg: Config, desde: date, hasta: date) -> dict[str, pd.DataFram
 
 
 def analizar(desde: date, hasta: date, periodo: str = "mes",
-             desde_backup: bool = False) -> int:
+             desde_backup: bool = False, corte: datetime | None = None) -> int:
     cfg = cargar_config()
     horarios = asistencia.cargar_horarios(desde, hasta, periodo)
-    log.info("Análisis de gestión por %s: %s -> %s", periodo, desde, hasta)
+    log.info("Análisis de gestión por %s: %s -> %s%s", periodo, desde, hasta,
+             f" (corte {corte:%H:%M})" if corte else "")
     log.info("Asesores del informe: %d | días con horario cargado: %d | mínimo para promedios: %d día(s)",
              len(horarios["agentes"]), len(horarios["agenda"]), horarios["minimo_dias_actividad"])
 
@@ -275,11 +289,16 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
         log.info("Modo --desde-backup: no se consulta la API")
         dfs = _leer_backup(cfg, desde, hasta)
     else:
-        dfs = extraer_analisis(cfg, desde, hasta, periodo)
+        dfs = extraer_analisis(cfg, desde, hasta, periodo, corte)
 
     if dfs["logueo"].empty and dfs["agente"].empty:
-        log.error("Sin datos de agentes en el periodo. Se aborta.")
-        return 1
+        # En una jornada en curso esto es un estado legítimo, no un fallo: en
+        # el corte de las 08:10 puede que todavía no se haya conectado nadie,
+        # y eso es justo lo que el coordinador necesita ver.
+        if not corte:
+            log.error("Sin datos de agentes en el periodo. Se aborta.")
+            return 1
+        log.warning("Corte %s: aún sin actividad. Se publica la nómina sin conexión.", f"{corte:%H:%M}")
 
     if not desde_backup:
         backup.guardar({f"analisis_{k}": v for k, v in dfs.items()},
@@ -288,7 +307,7 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
     generados = []
     for etiqueta, ini, fin in extract.partir_periodo(desde, hasta, periodo):
         destino = _informe_del_periodo(dfs, horarios, periodo, etiqueta,
-                                       ini.date(), fin.date(), cfg)
+                                       ini.date(), fin.date(), cfg, corte)
         if destino:
             generados.append(destino)
             log.info("Informe generado: %s", destino)
@@ -298,10 +317,15 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
         return 1
     log.info("%d informe(s) en %s", len(generados), cfg.ruta_salida)
 
+    # Consolida los cortes de las jornadas ya cerradas y aplica la retención.
+    excel_purga.limpiar(cfg.ruta_salida, cfg.dias_excel, cfg.hora_cierre_jornada)
+
     # Un solo HTML con todos los periodos del almacén, no solo los de esta
     # corrida: el coordinador conserva un único enlace y ve el histórico.
     tablero_datos.purgar(cfg.ruta_tablero)
-    tablero = tablero_html.generar(tablero_datos.cargar_todos(cfg.ruta_tablero), cfg.ruta_tablero)
+    tablero = tablero_html.generar(tablero_datos.cargar_todos(cfg.ruta_tablero),
+                                   cfg.ruta_tablero,
+                                   excel_vigentes=excel_purga.vigentes(cfg.ruta_salida))
     log.info("Tablero generado: %s", tablero)
     return 0
 
@@ -315,6 +339,7 @@ def _construir_parser() -> argparse.ArgumentParser:
   main.py --analisis --periodo mes               el mes pasado completo
   main.py --analisis --periodo semana            la semana pasada (lun-dom)
   main.py --analisis --periodo dia               ayer
+  main.py --analisis --periodo dia --hoy         la jornada en curso (corridas intradía)
   main.py --analisis --periodo mes --desde 2026-07-01 --hasta 2026-08-31
 """)
     parser.add_argument("--analisis", action="store_true",
@@ -325,6 +350,9 @@ def _construir_parser() -> argparse.ArgumentParser:
                         help="fecha inicial (YYYY-MM-DD). Si se omite, se toma el último "
                              "periodo cerrado según --periodo")
     parser.add_argument("--hasta", help="fecha final (YYYY-MM-DD)")
+    parser.add_argument("--hoy", action="store_true",
+                        help="jornada en curso: procesa el día de hoy hasta la hora actual. "
+                             "Es el modo de las corridas intradía")
     parser.add_argument("--desde-backup", action="store_true",
                         help="regenera el Excel desde el backup CSV, sin consumir API")
     parser.add_argument("--dias-atras", type=int, default=0,
@@ -341,9 +369,19 @@ if __name__ == "__main__":
     if not args.analisis:
         sys.exit(ejecutar(args.dias_atras, args.sin_excel))
 
-    # Sin fechas explícitas se toma el último periodo YA CERRADO. Es lo que
-    # permite programar el job en Jenkins sin fechas cableadas.
-    if args.desde:
+    # --hoy fija la ventana en la jornada en curso; sin fechas explícitas se
+    # toma el último periodo YA CERRADO. Las dos formas dejan el cron de
+    # Jenkins sin fechas cableadas.
+    corte = None
+    if args.hoy:
+        if args.desde or args.hasta:
+            _construir_parser().error("--hoy no se combina con --desde/--hasta")
+        if args.periodo != "dia":
+            _construir_parser().error("--hoy solo aplica con --periodo dia")
+        corte = datetime.now()
+        d = h = corte.date()
+        log.info("Modo --hoy: jornada en curso hasta las %s", f"{corte:%H:%M}")
+    elif args.desde:
         d = date.fromisoformat(args.desde)
         h = date.fromisoformat(args.hasta) if args.hasta else date.today()
     else:
@@ -354,7 +392,7 @@ if __name__ == "__main__":
         _construir_parser().error(f"--desde ({d}) es posterior a --hasta ({h})")
 
     try:
-        sys.exit(analizar(d, h, args.periodo, args.desde_backup))
+        sys.exit(analizar(d, h, args.periodo, args.desde_backup, corte))
     except Exception:
         # Traza completa al log y salida != 0 para que Jenkins marque el build
         # en rojo en vez de darlo por bueno.
