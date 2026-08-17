@@ -309,6 +309,29 @@ El tablero, en cambio, no corre ese riesgo: los navegadores leen el HTML y
 sueltan el archivo. Aun así la escritura reintenta tres veces, porque el
 antivirus o el indexador de Windows sí pueden retenerlo un instante.
 
+## El pipeline no depende del orquestador
+
+Todo lo que hace falta para operar vive en `main.py`: dónde publicar, la
+exclusión mutua entre corridas y la limpieza de archivos. Jenkins solo trae el
+último cambio del repo y ejecuta el comando; lo mismo funciona desde el
+Programador de tareas de Windows o lanzado a mano.
+
+**Exclusión mutua.** El token de Wolkvox no admite consumos en paralelo, y con
+ocho corridas intradía más la diaria y la semanal que dos se pisen deja de ser
+hipotético. `bloqueo.tomar()` escribe un candado en `RUTA_TABLERO` —la carpeta
+compartida, único punto por el que pasan todas las corridas— antes de consumir
+API. Si otra corrida lo tiene, esta se omite y **termina en verde**: la otra va
+a dejar los datos igual, así que no hay nada que reportar en rojo. Un candado
+huérfano caduca a los 45 minutos, para que una corrida muerta de madrugada no
+deje la operación sin tablero.
+
+Está en el programa y no en el `Jenkinsfile` a propósito: un lock de Jenkins
+solo protege de Jenkins.
+
+**Publicación.** `RUTA_SALIDA` y `RUTA_TABLERO` apuntan a la carpeta compartida
+en el `.env` del servidor. No hay paso de copia posterior ni artefactos que
+mover: el programa escribe donde la operación lee.
+
 ## Despliegue en Jenkins
 
 El `Jenkinsfile` de la raíz cubre los tres modos con un parámetro `PERIODO`.

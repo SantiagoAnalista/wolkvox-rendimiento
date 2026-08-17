@@ -1,10 +1,15 @@
 // Informe de gestión de asesores — Wolkvox
 //
-// Un solo Jenkinsfile cubre los cuatro modos. Sin fechas, cada corrida procesa
-// el último periodo YA CERRADO según PERIODO, así que el cron no lleva fechas
-// cableadas: en agosto el job mensual saca julio solo.
+// Jenkins NO es parte de la solución: solo trae el último cambio del repo y
+// ejecuta main.py. Todo lo demás vive en el programa —dónde se publica, la
+// exclusión mutua entre corridas, la limpieza de archivos—, así que el
+// pipeline funciona igual lanzado a mano, desde el Programador de tareas de
+// Windows o desde cualquier otro orquestador.
 //
-// Para programarlo, crear un job por modo apuntando a este mismo Jenkinsfile:
+// Configuración (rutas de salida, token, retención): en el .env del servidor,
+// no aquí. Este archivo no debería necesitar cambios para operar.
+//
+// Un job por modo, apuntando todos a este mismo Jenkinsfile:
 //
 //    mensual   PERIODO=mes                 H 6 1 * *     (día 1 de cada mes)
 //    semanal   PERIODO=semana              H 6 * * 1     (todos los lunes)
@@ -12,8 +17,10 @@
 //    intradía  PERIODO=dia, HOY=true       10,40 8,9 * * 1-6
 //                                          10 12,14,16,18 * * 1-6
 //
-// El job diario corre de martes a domingo a propósito: el lunes procesaría el
-// domingo, que no es día operativo.
+// Sin fechas, cada corrida procesa el último periodo YA CERRADO: en agosto el
+// job mensual saca julio solo, sin fechas cableadas en el cron. El diario corre
+// de martes a domingo a propósito: el lunes procesaría el domingo, que no es
+// día operativo.
 
 pipeline {
     agent any
@@ -32,20 +39,11 @@ pipeline {
     options {
         timeout(time: 45, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '60'))
-        disableConcurrentBuilds()   // no basta: ver el lock del token más abajo
     }
 
     environment {
-        WOLKVOX_TOKEN  = credentials('wolkvox-token-prod')
-        WOLKVOX_SERVER = '0010'
+        WOLKVOX_TOKEN = credentials('wolkvox-token-prod')
         PYTHONIOENCODING = 'utf-8'   // los nombres de agente llevan tildes y ñ
-
-        // Carpeta compartida desde la que la operación abre el tablero. Ahí
-        // viven tablero.html y su almacén, para que el job diario y el
-        // semanal acumulen en el MISMO histórico: el workspace de Jenkins no
-        // sirve, cada job tiene el suyo.
-        // La cuenta del servicio de Jenkins necesita escritura sobre la ruta.
-        RUTA_TABLERO = '\\\\servidor\\operacion\\rendimiento'
     }
 
     stages {
@@ -69,39 +67,19 @@ pipeline {
 
         stage('Generar informe') {
             steps {
-                // El token de Wolkvox no admite consumos en paralelo, y
-                // disableConcurrentBuilds() solo protege dentro de un job. Con
-                // ocho corridas intradía más la semanal del lunes, dos jobs
-                // pisándose deja de ser hipotético: lo que hay que bloquear es
-                // el token, no el job.
-                // Requiere el plugin 'lockable-resources' y declarar el recurso
-                // 'wolkvox-token' en Manage Jenkins -> Lockable Resources.
-                lock(resource: 'wolkvox-token') {
-                    script {
-                        def args = "--analisis --periodo ${params.PERIODO}"
-                        if (params.HOY) {
-                            args += " --hoy"
-                        } else if (params.DESDE?.trim()) {
-                            args += " --desde ${params.DESDE.trim()}"
-                            if (params.HASTA?.trim()) { args += " --hasta ${params.HASTA.trim()}" }
-                        }
-                        bat ".venv\\Scripts\\python main.py ${args}"
+                // main.py se protege solo de corridas simultáneas (el token de
+                // Wolkvox no admite paralelismo): si otra está en curso, esta
+                // se omite y termina en verde. No hace falta lock de Jenkins.
+                script {
+                    def args = "--analisis --periodo ${params.PERIODO}"
+                    if (params.HOY) {
+                        args += " --hoy"
+                    } else if (params.DESDE?.trim()) {
+                        args += " --desde ${params.DESDE.trim()}"
+                        if (params.HASTA?.trim()) { args += " --hasta ${params.HASTA.trim()}" }
                     }
+                    bat ".venv\\Scripts\\python main.py ${args}"
                 }
-            }
-        }
-
-        stage('Publicar') {
-            steps {
-                // El .xlsx es el entregable auditable. El tablero NO se archiva
-                // en Jenkins a propósito: Jenkins sirve lo archivado con una CSP
-                // que bloquea el CSS y el JS embebidos y la página saldría en
-                // blanco. main.py ya lo escribió directamente en RUTA_TABLERO.
-                archiveArtifacts artifacts: 'src/output/*.xlsx',
-                                 fingerprint: true, onlyIfSuccessful: true
-
-                // El Excel sí se copia: el tablero enlaza a él por nombre.
-                bat 'copy /Y src\\output\\*.xlsx "%RUTA_TABLERO%\\"'
             }
         }
     }
@@ -117,8 +95,9 @@ pipeline {
 
 Causas frecuentes:
   - Token vencido o rotado en wolkvox Manager
-  - La API no responde (wv${env.WOLKVOX_SERVER}.wolkvox.com sin respuesta)
+  - La API no responde
   - Falta cargar el cronograma del mes en src/data/Horarios *.xlsx
+  - Día no laboral (festivo o domingo): no hay informe que generar
 """,
                 to: 'operaciones@empresa.com')
         }

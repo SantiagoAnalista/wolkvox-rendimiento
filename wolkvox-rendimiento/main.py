@@ -23,7 +23,7 @@ from config.logger_config import setup_logger
 from config.settings import Config, cargar_config
 from src.api import extract
 from src.api.client import WolkvoxClient
-from src.services import (asistencia, backup, excel_purga, gestion, report,
+from src.services import (asistencia, backup, bloqueo, excel_purga, gestion, report,
                           reporte_analisis, tablero_datos, tablero_html, transform)
 
 log = logging.getLogger("main")
@@ -392,9 +392,18 @@ if __name__ == "__main__":
         _construir_parser().error(f"--desde ({d}) es posterior a --hasta ({h})")
 
     try:
-        sys.exit(analizar(d, h, args.periodo, args.desde_backup, corte))
+        # El candado es del programa, no del orquestador: protege igual si la
+        # corrida la lanza Jenkins, el Programador de tareas o una persona.
+        with bloqueo.tomar(cargar_config().ruta_tablero):
+            codigo = analizar(d, h, args.periodo, args.desde_backup, corte)
+        sys.exit(codigo)
+    except bloqueo.EnCurso as e:
+        # No es un fallo: la otra corrida va a dejar los datos igual. Salir en
+        # verde evita marcar en rojo algo que se resolvió solo.
+        log.warning("Se omite esta corrida (%s)", e)
+        sys.exit(0)
     except Exception:
-        # Traza completa al log y salida != 0 para que Jenkins marque el build
-        # en rojo en vez de darlo por bueno.
+        # Traza completa al log y salida != 0 para que el orquestador marque
+        # la corrida en rojo en vez de darla por buena.
         log.exception("La corrida terminó con un error no controlado")
         sys.exit(1)
