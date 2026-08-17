@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .horarios_excel import normalizar
+from src.dominio.nombres import normalizar
 
 
 def filtrar_agentes(df: pd.DataFrame, incluidos: list[str], columna: str = "agent_name") -> pd.DataFrame:

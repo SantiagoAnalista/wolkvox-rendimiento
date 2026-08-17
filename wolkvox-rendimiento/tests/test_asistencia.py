@@ -6,7 +6,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import asistencia
+from src.dominio import asistencia
 
 JORNADA = {"lunes": ["08:00", "18:00"], "martes": ["08:00", "18:00"],
            "miercoles": ["08:00", "18:00"], "jueves": ["08:00", "18:00"],

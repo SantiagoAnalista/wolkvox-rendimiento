@@ -6,7 +6,8 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import report, transform
+from src.adaptadores.publicacion import excel_operativo as report
+from src.adaptadores.wolkvox import traduccion as transform
 
 CATEGORIAS = {"conectadas": {"VENTA": "efectiva"}, "no_conectadas": {"busy": "no_contactada"}}
 

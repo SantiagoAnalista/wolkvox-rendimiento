@@ -13,31 +13,79 @@ extraer  ->  transformar  ->  exportar
 Los nombres de campo de la API se tomaron de la colección oficial de Postman
 (`wolkvox APIs (ES).postman_collection.json`), no de la documentación web.
 
+## Arquitectura
+
+Hexagonal, sin ceremonia: no hay clases abstractas ni inyección de
+dependencias porque a esta escala serían andamio. Lo que sí se sostiene es la
+regla de dependencia — **todo apunta hacia adentro**:
+
+```
+main.py          traduce la línea de comandos. Nada más.
+   |
+   v
+src/aplicacion   casos de uso: qué se pide, en qué orden, a dónde va
+   |                analisis.py   informe de gestión (diario, semanal, mensual, intradía)
+   |                operativo.py  reporte operativo del día
+   |
+   +--> src/dominio       las reglas. Cero IO: pandas y nada más
+   |       asistencia.py  puntualidad contra el horario pactado
+   |       gestion.py     tiempos, efectividad y alertas
+   |       nombres.py     identidad del asesor y días de la semana
+   |
+   +--> src/adaptadores   todo lo que sale del proceso
+           wolkvox/       cliente HTTP, extracción por endpoint, traducción a DataFrames
+           almacen/       horarios (YAML + Excel), respaldo CSV, candado de corridas
+           publicacion/   Excel operativo, Excel de análisis, retención, tablero HTML
+```
+
+El dominio recibe el horario ya resuelto como un `dict` y no sabe que salió de
+un Excel; recibe DataFrames y no sabe que vinieron de una API. Por eso sus
+pruebas no montan nada: son datos en memoria.
+
+La regla no es un acuerdo verbal, es
+[tests/test_arquitectura.py](tests/test_arquitectura.py): falla si alguien
+importa un adaptador desde el dominio o mete `yaml` en el núcleo. Un layout
+hexagonal se degrada callado, y esa prueba avisa cuando arreglarlo todavía es
+barato.
+
 ## Estructura
 
 ```
 wolkvox-rendimiento/
-├── main.py                   # orquestador — extraer / transformar / exportar
-├── categorias.yaml            # mapeo de categoría de negocio (editable sin tocar código)
-├── horarios.yaml               # horarios, tolerancia, festivos y umbrales de alerta
+├── main.py                        # CLI: traduce argumentos a un caso de uso
+├── categorias.yaml                # mapeo de categoría de negocio (editable sin tocar código)
+├── horarios.yaml                  # horarios, tolerancia, festivos y umbrales de alerta
 ├── config/
-│   ├── paths.py                # ROOT_DIR — raíz del proyecto, referencia única
-│   ├── settings.py             # carga .env
-│   └── logger_config.py        # setup_logger() — archivo + consola, purga logs > 3 días
+│   ├── paths.py                   # ROOT_DIR — raíz del proyecto, referencia única
+│   ├── settings.py                # carga .env
+│   └── logger_config.py           # setup_logger() — archivo + consola, purga logs > 3 días
 ├── src/
-│   ├── api/
-│   │   ├── client.py            # cliente HTTP de Wolkvox (auth, reintentos)
-│   │   └── extract.py           # un método por endpoint + partición de ventanas grandes
-│   ├── services/
-│   │   ├── transform.py          # normaliza a DataFrames, tiempos a segundos, categoriza
-│   │   ├── backup.py             # CSV de lo extraído, últimos 3 días
-│   │   ├── report.py             # Excel del reporte diario
-│   │   ├── horarios_excel.py     # lee los cronogramas de la operación
-│   │   ├── asistencia.py         # puntualidad: login/logout contra el horario pactado
-│   │   ├── gestion.py            # tiempos por estado, efectividad y cruce
-│   │   └── reporte_analisis.py   # Excel del informe de análisis
-│   ├── data/                       # backup CSV (en .gitignore)
-│   └── output/                      # Excel generados (en .gitignore)
+│   ├── dominio/                   # las reglas. Cero IO
+│   │   ├── asistencia.py          # puntualidad: login/logout contra el horario pactado
+│   │   ├── gestion.py             # tiempos por estado, efectividad, alertas y curva horaria
+│   │   └── nombres.py             # identidad del asesor y días de la semana
+│   ├── aplicacion/                # casos de uso
+│   │   ├── analisis.py            # informe de gestión (diario, semanal, mensual, intradía)
+│   │   └── operativo.py           # reporte operativo del día
+│   ├── adaptadores/
+│   │   ├── wolkvox/
+│   │   │   ├── cliente.py         # cliente HTTP (auth, reintentos)
+│   │   │   ├── extraccion.py      # un método por endpoint + partición de ventanas
+│   │   │   └── traduccion.py      # registros crudos -> DataFrames, categorización
+│   │   ├── almacen/
+│   │   │   ├── horarios.py        # horarios.yaml + los Excel de cronograma
+│   │   │   ├── respaldo.py        # CSV de lo extraído, últimos 3 días
+│   │   │   └── candado.py         # impide dos corridas simultáneas sobre el token
+│   │   └── publicacion/
+│   │       ├── excel_operativo.py # Excel del reporte diario
+│   │       ├── excel_analisis.py  # Excel del informe de gestión (la maestra)
+│   │       ├── retencion.py       # consolida cortes del día y purga por antigüedad
+│   │       ├── tablero_datos.py   # almacén JSON por periodo
+│   │       ├── tablero_html.py    # render del tablero
+│   │       └── plantillas/
+│   │           └── tablero.html   # la plantilla, autocontenida
+│   ├── data/                      # backup CSV (en .gitignore)
+│   └── output/                    # Excel y tablero generados (en .gitignore)
 ├── tests/
 └── logs/
 ```

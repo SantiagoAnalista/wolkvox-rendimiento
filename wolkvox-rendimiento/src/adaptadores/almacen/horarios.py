@@ -1,5 +1,5 @@
-"""Lee los Excel de horarios de la operación y los convierte en un horario
-por agente y fecha.
+"""Adaptador de horarios: lee horarios.yaml y los Excel de cronograma de la
+operación, y los convierte en el dict que consume el dominio.
 
 Los archivos vienen como calendario semanal: bloques de columnas con el
 número de día, el nombre del día y la fila 'Horario Laboral' con textos tipo
@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import calendar
 import re
-import unicodedata
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
-DIAS_SEMANA = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+from config.paths import ROOT_DIR
+from src.dominio.nombres import DIAS_SEMANA, normalizar
 FILA_HORARIO = "horario laboral"
 FILA_ALMUERZO = "hora almuerzo"
 
@@ -29,16 +30,6 @@ FILA_ALMUERZO = "hora almuerzo"
 # en los archivos reales los festivos conservan el "8 a 5" de la plantilla.
 # "En casa" NO entra aquí: es teletrabajo, o sea día laboral normal.
 ANOTACIONES_NO_LABORAL = ("festivo", "descanso", "vacaciones", "incapacidad")
-
-
-def normalizar(texto) -> str:
-    """Sin tildes, sin espacios repetidos, en mayúsculas. Los nombres de
-    agente del Excel y de la API difieren en espacios dobles y acentos."""
-    if texto is None or (isinstance(texto, float) and pd.isna(texto)):
-        return ""
-    limpio = unicodedata.normalize("NFKD", str(texto))
-    limpio = "".join(c for c in limpio if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", limpio).strip().upper()
 
 
 def _hora(texto: str, es_fin: bool) -> str | None:
@@ -165,3 +156,50 @@ def cargar(archivos: list[dict], grupos: dict[str, list[str]],
             for fecha, jornada in dias.items():
                 agenda[(normalizar(agente), fecha)] = jornada
     return agenda
+
+
+def _minimo_dias(valor, periodo: str) -> int:
+    """El umbral de actividad puede venir como número (igual para todos) o
+    como un valor por modo de ejecución."""
+    if isinstance(valor, dict):
+        return int(valor.get(periodo, 0))
+    return int(valor or 0)
+
+
+def cargar_horarios(desde: date | None = None, hasta: date | None = None,
+                    periodo: str = "mes", ruta: Path | None = None) -> dict:
+    """Lee horarios.yaml y, con él, los Excel de cronograma de la operación."""
+    with open(ruta or (ROOT_DIR / "horarios.yaml"), "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+
+    agenda = {}
+    archivos = cfg.get("archivos_horario") or []
+    if archivos and desde and hasta:
+        agenda = cargar(archivos, cfg.get("grupos") or {},
+                               _meses_candidatos(desde, hasta), ROOT_DIR)
+
+    return {
+        "tolerancia_min": int(cfg.get("tolerancia_min", 0)),
+        "minimo_dias_actividad": _minimo_dias(cfg.get("minimo_dias_actividad"), periodo),
+        "por_defecto": cfg.get("por_defecto") or {},
+        "agentes": [normalizar(a) for a in (cfg.get("agentes") or [])],
+        "agenda": agenda,
+        "festivos": set(cfg.get("festivos") or []),
+        "umbrales": cfg.get("umbrales") or {},
+    }
+
+
+def _meses_candidatos(desde: date, hasta: date) -> list[tuple[int, int]]:
+    """Meses que puede representar una hoja: el periodo, más un margen a cada
+    lado (un cronograma de junio puede cubrir los primeros días de julio)."""
+    meses, y, m = [], desde.year, desde.month
+    for _ in range(2):                       # margen hacia atrás
+        m -= 1
+        if m < 1:
+            y, m = y - 1, 12
+    while (y, m) <= (hasta.year, hasta.month + 1 if hasta.month < 12 else 12):
+        meses.append((y, m))
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return meses

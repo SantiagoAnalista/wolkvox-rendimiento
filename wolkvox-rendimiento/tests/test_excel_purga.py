@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import excel_purga
+from src.adaptadores.publicacion import retencion as excel_purga
 
 HOY = date(2026, 8, 17)
 

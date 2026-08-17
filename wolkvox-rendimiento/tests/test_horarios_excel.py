@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import horarios_excel as hx
+from src.adaptadores.almacen import horarios as hx
 
 CANDIDATOS_2026 = [(2026, m) for m in range(5, 10)]
 

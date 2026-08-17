@@ -6,7 +6,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import gestion
+from src.dominio import gestion
 
 AUX = pd.DataFrame([
     {"Periodo": "2026-07", "agent_name": "Ana", "aux_state": "Respuesta Whats", "time_seg": 7200},

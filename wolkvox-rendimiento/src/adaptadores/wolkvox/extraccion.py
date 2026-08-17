@@ -9,7 +9,7 @@ from time import sleep
 
 import httpx
 
-from .client import WolkvoxClient
+from .cliente import WolkvoxClient
 
 log = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import transform
+from src.adaptadores.wolkvox import traduccion as transform
 
 CATEGORIAS = {
     "conectadas": {"VENTA": "efectiva"},

@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import asistencia
+from src.dominio import asistencia
 
 JORNADA = {d: ["08:00", "18:00"] for d in
            ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]}

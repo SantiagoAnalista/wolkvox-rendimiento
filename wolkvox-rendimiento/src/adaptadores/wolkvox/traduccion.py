@@ -13,6 +13,7 @@ import yaml
 
 from config.paths import ROOT_DIR
 
+
 # Campos que Wolkvox entrega como texto de tiempo y pasamos a segundos.
 TIEMPOS = ["ready_time", "inbound_time", "outbound_time", "acw_time",
            "ring_time", "login_time", "aux_time", "aht", "aht_inbound", "aht_outbund"]

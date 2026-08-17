@@ -1,5 +1,9 @@
-"""Puntualidad: cruza el login/logout real (agent_7) contra el horario
-pactado (horarios.yaml) para detectar entradas tarde y salidas temprano.
+"""Puntualidad: cruza el login/logout real contra el horario pactado para
+detectar entradas tarde y salidas temprano.
+
+Núcleo de dominio: recibe el horario ya resuelto como un dict y no sabe de
+dónde salió. Quien lo lee del YAML y de los Excel es el adaptador
+`adaptadores.almacen.horarios`.
 
 Dos decisiones que cambian los números y conviene tener presentes:
 
@@ -11,64 +15,12 @@ Dos decisiones que cambian los números y conviene tener presentes:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, timedelta
 
 import pandas as pd
-import yaml
 
-from config.paths import ROOT_DIR
-
-from .horarios_excel import DIAS_SEMANA as DIAS
-from .horarios_excel import cargar as cargar_agenda
-from .horarios_excel import normalizar
-
-
-def _minimo_dias(valor, periodo: str) -> int:
-    """El umbral de actividad puede venir como número (igual para todos) o
-    como un valor por modo de ejecución."""
-    if isinstance(valor, dict):
-        return int(valor.get(periodo, 0))
-    return int(valor or 0)
-
-
-def cargar_horarios(desde: date | None = None, hasta: date | None = None,
-                    periodo: str = "mes", ruta: Path | None = None) -> dict:
-    """Lee horarios.yaml y, con él, los Excel de cronograma de la operación."""
-    with open(ruta or (ROOT_DIR / "horarios.yaml"), "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    agenda = {}
-    archivos = cfg.get("archivos_horario") or []
-    if archivos and desde and hasta:
-        agenda = cargar_agenda(archivos, cfg.get("grupos") or {},
-                               _meses_candidatos(desde, hasta), ROOT_DIR)
-
-    return {
-        "tolerancia_min": int(cfg.get("tolerancia_min", 0)),
-        "minimo_dias_actividad": _minimo_dias(cfg.get("minimo_dias_actividad"), periodo),
-        "por_defecto": cfg.get("por_defecto") or {},
-        "agentes": [normalizar(a) for a in (cfg.get("agentes") or [])],
-        "agenda": agenda,
-        "festivos": set(cfg.get("festivos") or []),
-        "umbrales": cfg.get("umbrales") or {},
-    }
-
-
-def _meses_candidatos(desde: date, hasta: date) -> list[tuple[int, int]]:
-    """Meses que puede representar una hoja: el periodo, más un margen a cada
-    lado (un cronograma de junio puede cubrir los primeros días de julio)."""
-    meses, y, m = [], desde.year, desde.month
-    for _ in range(2):                       # margen hacia atrás
-        m -= 1
-        if m < 1:
-            y, m = y - 1, 12
-    while (y, m) <= (hasta.year, hasta.month + 1 if hasta.month < 12 else 12):
-        meses.append((y, m))
-        m += 1
-        if m > 12:
-            y, m = y + 1, 1
-    return meses
+from .nombres import DIAS_SEMANA as DIAS
+from .nombres import normalizar
 
 
 def _jornada(horarios: dict, agente: str, dia: date) -> tuple[str, str] | None:

@@ -17,16 +17,12 @@ class Config:
     timeout_seg: int
     reintentos: int
     bloque_horas: int
-    zona_horaria: str
     ruta_backup: Path
     dias_backup: int
     ruta_salida: Path
     ruta_tablero: Path
     dias_excel: int
     hora_cierre_jornada: int
-    ruta_compartida: str
-    jornada_inicio: int
-    jornada_fin: int
 
 
 def cargar_config() -> Config:
@@ -57,7 +53,6 @@ def cargar_config() -> Config:
         timeout_seg=int(os.getenv("WOLKVOX_TIMEOUT_SEG", "90")),
         reintentos=int(os.getenv("WOLKVOX_REINTENTOS", "3")),
         bloque_horas=int(os.getenv("BLOQUE_HORAS", "6")),
-        zona_horaria=os.getenv("ZONA_HORARIA", "America/Bogota"),
         ruta_backup=ruta_backup,
         dias_backup=int(os.getenv("DIAS_BACKUP", "3")),
         ruta_salida=ruta_salida,
@@ -67,7 +62,4 @@ def cargar_config() -> Config:
         # consolidan en un solo archivo.
         dias_excel=int(os.getenv("DIAS_EXCEL", "3")),
         hora_cierre_jornada=int(os.getenv("HORA_CIERRE_JORNADA", "18")),
-        ruta_compartida=os.getenv("RUTA_COMPARTIDA", ""),
-        jornada_inicio=int(os.getenv("JORNADA_INICIO", "6")),
-        jornada_fin=int(os.getenv("JORNADA_FIN", "21")),
     )

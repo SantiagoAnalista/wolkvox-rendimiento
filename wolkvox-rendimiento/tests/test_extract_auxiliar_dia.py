@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.api import extract
+from src.adaptadores.wolkvox import extraccion as extract
 
 
 class ClienteFalso:

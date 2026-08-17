@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.api import extract
+from src.adaptadores.wolkvox import extraccion as extract
 
 
 def _etiquetas(desde, hasta, periodo):
@@ -131,21 +131,21 @@ def test_el_periodo_en_curso_nunca_se_incluye():
 
 # --- Umbral de actividad por modo -----------------------------------------
 
-from src.services import asistencia
+from src.adaptadores.almacen import horarios as adaptador_horarios
 
 
 def test_umbral_de_actividad_escala_con_el_modo():
     """Exigir 5 días trabajados en un informe diario dejaría a todos fuera
     de los promedios generales."""
     valor = {"mes": 5, "semana": 2, "dia": 1}
-    assert asistencia._minimo_dias(valor, "mes") == 5
-    assert asistencia._minimo_dias(valor, "semana") == 2
-    assert asistencia._minimo_dias(valor, "dia") == 1
+    assert adaptador_horarios._minimo_dias(valor, "mes") == 5
+    assert adaptador_horarios._minimo_dias(valor, "semana") == 2
+    assert adaptador_horarios._minimo_dias(valor, "dia") == 1
 
 
 def test_umbral_admite_un_numero_suelto_para_todos_los_modos():
-    assert asistencia._minimo_dias(5, "dia") == 5
+    assert adaptador_horarios._minimo_dias(5, "dia") == 5
 
 
 def test_umbral_ausente_no_excluye_a_nadie():
-    assert asistencia._minimo_dias(None, "mes") == 0
+    assert adaptador_horarios._minimo_dias(None, "mes") == 0

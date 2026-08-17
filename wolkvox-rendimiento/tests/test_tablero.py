@@ -8,7 +8,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.services import gestion, tablero_datos, tablero_html
+from src.dominio import gestion
+from src.adaptadores.publicacion import tablero_datos, tablero_html
 
 UMBRALES = {"auxiliar_alto": 30, "sin_tipificar_alto": 30, "efectividad_baja": 10,
             "ready_alto": 50, "entradas_tarde_alto": 10, "tarde_grave_min": 15}
