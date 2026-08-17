@@ -49,10 +49,12 @@ pipeline {
     stages {
         stage('Preparar entorno') {
             steps {
+                // requirements-dev incluye a requirements y añade pytest, que
+                // la etapa siguiente necesita.
                 bat '''
                     python -m venv .venv
                     .venv\\Scripts\\python -m pip install --quiet --upgrade pip
-                    .venv\\Scripts\\python -m pip install --quiet -r requirements.txt
+                    .venv\\Scripts\\python -m pip install --quiet -r requirements-dev.txt
                 '''
             }
         }

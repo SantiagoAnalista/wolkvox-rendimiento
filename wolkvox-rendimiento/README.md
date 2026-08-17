@@ -430,8 +430,12 @@ Jenkins) se agrega cuando el pipeline esté validado con datos reales.
 ## Pruebas
 
 ```bash
+python -m pip install -r requirements-dev.txt   # requirements + pytest
 python -m pytest -q
 ```
+
+No consumen API ni necesitan datos en `src/data`: se pueden correr en
+cualquier equipo recién clonado.
 
 Cubren el parseo de tiempos, la ocupación, la categorización, la rotación del
 backup y la generación del Excel de punta a punta (incluido el caso de un día

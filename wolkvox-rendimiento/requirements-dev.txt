@@ -1,0 +1,6 @@
+# Dependencias de desarrollo y de la etapa de pruebas.
+# Aparte de requirements.txt para no llevar pytest al entorno de ejecución,
+# pero SÍ hace falta instalarlo donde se corran las pruebas (Jenkins incluido).
+-r requirements.txt
+
+pytest>=8.0
