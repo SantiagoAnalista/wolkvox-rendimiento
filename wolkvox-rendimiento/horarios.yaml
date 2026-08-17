@@ -66,3 +66,13 @@ umbrales:
   auxiliar_alto: 30       # % del tiempo en pausas
   sin_tipificar_alto: 30  # % de gestiones que el agente nunca codificó
   efectividad_baja: 10    # % de efectividad por debajo del cual se señala
+
+  # % de días con entrada tarde a partir del cual el asesor se marca en rojo.
+  # El Excel ya usa este mismo valor, pero cableado en reporte_analisis.py;
+  # vale la pena unificarlo ahí cuando se toque esa hoja.
+  entradas_tarde_alto: 10
+
+  # Solo para el tablero: separa "se le hizo tarde" de "no llegó a la hora".
+  # Por debajo de este valor la celda del calendario sale ámbar; por encima,
+  # roja. No afecta el conteo de entradas tarde, que lo gobierna tolerancia_min.
+  tarde_grave_min: 15

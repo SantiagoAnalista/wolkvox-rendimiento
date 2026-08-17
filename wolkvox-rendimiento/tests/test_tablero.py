@@ -1,0 +1,209 @@
+import json
+import sys
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.services import gestion, tablero_datos, tablero_html
+
+UMBRALES = {"auxiliar_alto": 30, "sin_tipificar_alto": 30, "efectividad_baja": 10,
+            "ready_alto": 50, "entradas_tarde_alto": 10, "tarde_grave_min": 15}
+
+METADATOS = {"Periodo": "Semana 32 de 2026", "Generado": "2026-08-13 11:35:57"}
+
+
+def cuadros_minimos(**extra):
+    base = {
+        "general_puntualidad": pd.DataFrame(
+            [("Total entradas tarde", 9), ("% Entradas tarde (operación)", "40.9 %")],
+            columns=["Indicador", "Valor"]),
+        "general_gestion": pd.DataFrame(
+            [("Ocupación promedio", "71.4 %"), ("% Sin tipificar", "48.1 %")],
+            columns=["Indicador", "Valor"]),
+        "puntualidad_agente": pd.DataFrame([{"Agente": "Ana", "Entradas tarde": 2,
+                                             "Días trabajados": 5, "% Entradas tarde": 40.0}]),
+        "puntualidad_detalle": pd.DataFrame([{"Agente": "Ana", "Fecha": "2026-08-03",
+                                              "Estado": "Tarde", "Min tarde": 3.4}]),
+        "tiempos": pd.DataFrame([{"Agente": "Ana", "% Auxiliar": 29.2}]),
+        "efectividad": pd.DataFrame([{"Agente": "Ana", "% Efectividad total": 2.2}]),
+        "cruce": pd.DataFrame([{"Agente": "Ana", "Alerta": "No tipifica (55%)"}]),
+        "auxiliares": pd.DataFrame([{"Agente": "Ana", "Estado auxiliar": "Almuerzo", "Horas": 1.02}]),
+        "curva_horaria": pd.DataFrame([{"Hora": 8, "Agente": "Ana", "Llamadas": 12}]),
+    }
+    base.update(extra)
+    return base
+
+
+def construir(**extra):
+    return tablero_datos.construir(
+        cuadros_minimos(**extra), METADATOS, "2026-S32", "semana",
+        date(2026, 8, 3), date(2026, 8, 9), UMBRALES, tolerancia_min=3)
+
+
+# ── gestion.curva_horaria ────────────────────────────────────────────────
+
+def test_curva_horaria_agrupa_por_hora_y_agente():
+    llamadas = pd.DataFrame([
+        {"hora": 8, "agent_name": "Ana"}, {"hora": 8, "agent_name": "Ana"},
+        {"hora": 8, "agent_name": "Beto"}, {"hora": 9, "agent_name": "Ana"},
+    ])
+    curva = gestion.curva_horaria(llamadas).set_index(["Hora", "Agente"])
+    assert curva.loc[(8, "Ana"), "Llamadas"] == 2
+    assert curva.loc[(8, "Beto"), "Llamadas"] == 1
+    assert curva.loc[(9, "Ana"), "Llamadas"] == 1
+
+
+def test_curva_horaria_sin_datos_devuelve_columnas_esperadas():
+    """El tablero itera las columnas: un DataFrame vacío sin ellas rompería."""
+    vacia = gestion.curva_horaria(pd.DataFrame())
+    assert list(vacia.columns) == ["Hora", "Agente", "Llamadas"]
+    assert vacia.empty
+
+
+# ── tablero_datos.construir ──────────────────────────────────────────────
+
+def test_construir_aplana_los_indicadores_de_los_dos_cuadros_generales():
+    p = construir()
+    assert p["kpis"]["% Entradas tarde (operación)"] == "40.9 %"
+    assert p["kpis"]["Ocupación promedio"] == "71.4 %"
+
+
+def test_construir_conserva_los_umbrales_para_que_el_html_no_los_cablee():
+    p = construir()["umbrales"]
+    assert p["tolerancia_min"] == 3
+    assert p["tarde_grave_min"] == 15
+    assert p["efectividad_baja"] == 10
+
+
+def test_construir_solo_incluye_los_cuadros_que_el_tablero_dibuja():
+    p = construir(auxiliares_hm=pd.DataFrame([{"Agente": "Ana"}]))
+    assert set(p["cuadros"]) == set(tablero_datos.CUADROS_TABLERO)
+    assert "auxiliares_hm" not in p["cuadros"]
+
+
+def test_construir_tolera_cuadros_ausentes_o_vacios():
+    p = tablero_datos.construir({}, METADATOS, "2026-S32", "semana",
+                                date(2026, 8, 3), date(2026, 8, 9), UMBRALES, 3)
+    assert p["kpis"] == {}
+    assert all(v == [] for v in p["cuadros"].values())
+
+
+def test_construir_convierte_nan_a_null_serializable():
+    """json.dumps escribiría NaN, que rompe el JSON.parse del navegador."""
+    cuadros = cuadros_minimos(puntualidad_detalle=pd.DataFrame(
+        [{"Agente": "Ana", "Fecha": "2026-08-03", "Min tarde": None, "Estado": "OK"}]))
+    p = tablero_datos.construir(cuadros, METADATOS, "2026-S32", "semana",
+                                date(2026, 8, 3), date(2026, 8, 9), UMBRALES, 3)
+    crudo = json.dumps(p)
+    assert "NaN" not in crudo
+    assert p["cuadros"]["puntualidad_detalle"][0]["Min tarde"] is None
+
+
+# ── Almacén ──────────────────────────────────────────────────────────────
+
+def test_guardar_y_cargar_ida_y_vuelta(tmp_path):
+    tablero_datos.guardar(construir(), tmp_path)
+    cargados = tablero_datos.cargar_todos(tmp_path)
+    assert [p["etiqueta"] for p in cargados] == ["2026-S32"]
+    assert cargados[0]["kpis"]["Ocupación promedio"] == "71.4 %"
+
+
+def test_guardar_no_deja_archivos_temporales(tmp_path):
+    tablero_datos.guardar(construir(), tmp_path)
+    assert list(tablero_datos.ruta_store(tmp_path).glob("*.tmp")) == []
+
+
+def test_reprocesar_un_periodo_lo_reescribe_sin_duplicar(tmp_path):
+    tablero_datos.guardar(construir(), tmp_path)
+    p = construir()
+    p["kpis"]["Ocupación promedio"] = "80.0 %"
+    tablero_datos.guardar(p, tmp_path)
+    cargados = tablero_datos.cargar_todos(tmp_path)
+    assert len(cargados) == 1
+    assert cargados[0]["kpis"]["Ocupación promedio"] == "80.0 %"
+
+
+def test_cargar_ordena_del_mas_reciente_al_mas_antiguo(tmp_path):
+    for etiqueta, ini in (("2026-S31", date(2026, 7, 27)), ("2026-S32", date(2026, 8, 3))):
+        p = construir()
+        p["etiqueta"], p["desde"] = etiqueta, ini.isoformat()
+        tablero_datos.guardar(p, tmp_path)
+    assert [p["etiqueta"] for p in tablero_datos.cargar_todos(tmp_path)] == ["2026-S32", "2026-S31"]
+
+
+def test_cargar_ignora_un_json_corrupto_sin_tumbar_la_corrida(tmp_path):
+    tablero_datos.guardar(construir(), tmp_path)
+    (tablero_datos.ruta_store(tmp_path) / "2026-S30.json").write_text("{roto", encoding="utf-8")
+    assert [p["etiqueta"] for p in tablero_datos.cargar_todos(tmp_path)] == ["2026-S32"]
+
+
+def test_retencion_recorta_por_tipo_y_purgar_borra_lo_que_sobra(tmp_path):
+    for n in range(1, 6):
+        p = construir()
+        p["etiqueta"], p["desde"] = f"2026-S{n:02d}", date(2026, 1, n).isoformat()
+        tablero_datos.guardar(p, tmp_path)
+
+    retencion = {"semana": 3}
+    assert len(tablero_datos.cargar_todos(tmp_path, retencion)) == 3
+    tablero_datos.purgar(tmp_path, retencion)
+    assert len(list(tablero_datos.ruta_store(tmp_path).glob("*.json"))) == 3
+    # Se conservan los más recientes, no los primeros que se escribieron.
+    assert [p["etiqueta"] for p in tablero_datos.cargar_todos(tmp_path, retencion)] == \
+        ["2026-S05", "2026-S04", "2026-S03"]
+
+
+@pytest.mark.parametrize("etiqueta, tipo", [
+    ("2026-08-12", "dia"), ("2026-S32", "semana"), ("2026-08", "mes"),
+])
+def test_tipo_se_deduce_de_la_etiqueta(etiqueta, tipo):
+    assert tablero_datos._tipo(etiqueta) == tipo
+
+
+# ── Render ───────────────────────────────────────────────────────────────
+
+def test_generar_escribe_html_con_el_payload_embebido(tmp_path):
+    destino = tablero_html.generar([construir()], tmp_path)
+    html = destino.read_text(encoding="utf-8")
+    assert destino.name == "tablero.html"
+    assert tablero_html.MARCADOR not in html
+    assert '"etiqueta":"2026-S32"' in html.replace(" ", "")
+
+
+def test_generar_neutraliza_el_cierre_de_etiqueta_en_los_datos(tmp_path):
+    """Un '</script>' dentro de un nombre cerraría la etiqueta antes de tiempo."""
+    p = construir()
+    p["titulo"] = "Semana </script><b>rota</b>"
+    html = tablero_html.generar([p], tmp_path).read_text(encoding="utf-8")
+    assert "</script><b>rota" not in html
+    assert "<\\/script>" in html
+
+
+def test_generar_no_deja_temporales_y_es_reejecutable(tmp_path):
+    tablero_html.generar([construir()], tmp_path)
+    destino = tablero_html.generar([construir()], tmp_path)
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert destino.exists()
+
+
+def test_generar_sin_periodos_produce_un_html_valido(tmp_path):
+    """La primera corrida de un entorno nuevo no debe reventar."""
+    html = tablero_html.generar([], tmp_path).read_text(encoding="utf-8")
+    assert '"periodos":[]' in html.replace(" ", "")
+
+
+def test_generar_falla_si_la_plantilla_no_tiene_marcador(tmp_path):
+    plantilla = tmp_path / "sin_marcador.html"
+    plantilla.write_text("<html></html>", encoding="utf-8")
+    with pytest.raises(ValueError, match=tablero_html.MARCADOR):
+        tablero_html.generar([construir()], tmp_path, plantilla=plantilla)
+
+
+def test_la_plantilla_del_repo_existe_y_es_autocontenida():
+    """Sin CDN: el tablero se abre desde una carpeta compartida, sin red."""
+    html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
+    assert tablero_html.MARCADOR in html
+    assert "src=\"http" not in html and "href=\"http" not in html

@@ -23,7 +23,8 @@ from config.logger_config import setup_logger
 from config.settings import Config, cargar_config
 from src.api import extract
 from src.api.client import WolkvoxClient
-from src.services import asistencia, backup, gestion, report, reporte_analisis, transform
+from src.services import (asistencia, backup, gestion, report, reporte_analisis,
+                          tablero_datos, tablero_html, transform)
 
 log = logging.getLogger("main")
 
@@ -209,6 +210,7 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "auxiliares": gestion.auxiliares_por_tipo(auxiliar),
         "efectividad": efect,
         "cruce": gestion.cruce(tiempos, efect, activos, horarios["umbrales"]),
+        "curva_horaria": gestion.curva_horaria(filtrar("llamadas")),
     }
 
     metadatos = {
@@ -225,8 +227,16 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "Generado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    return reporte_analisis.generar(cuadros, metadatos, cfg.ruta_salida,
-                                    nombre=f"analisis_gestion_{etiqueta}")
+    destino = reporte_analisis.generar(cuadros, metadatos, cfg.ruta_salida,
+                                       nombre=f"analisis_gestion_{etiqueta}")
+
+    # El tablero se alimenta de los MISMOS cuadros, sin recalcular. Aquí solo
+    # se persiste el periodo; el HTML se rearma al final con todo el histórico.
+    tablero_datos.guardar(
+        tablero_datos.construir(cuadros, metadatos, etiqueta, periodo, desde, hasta,
+                                horarios["umbrales"], horarios["tolerancia_min"]),
+        cfg.ruta_tablero)
+    return destino
 
 
 FUENTES_ANALISIS = ["logueo", "agente", "auxiliar", "auxiliar_dia",
@@ -287,6 +297,12 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
         log.error("No se generó ningún informe.")
         return 1
     log.info("%d informe(s) en %s", len(generados), cfg.ruta_salida)
+
+    # Un solo HTML con todos los periodos del almacén, no solo los de esta
+    # corrida: el coordinador conserva un único enlace y ve el histórico.
+    tablero_datos.purgar(cfg.ruta_tablero)
+    tablero = tablero_html.generar(tablero_datos.cargar_todos(cfg.ruta_tablero), cfg.ruta_tablero)
+    log.info("Tablero generado: %s", tablero)
     return 0
 
 

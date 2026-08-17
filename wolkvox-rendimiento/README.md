@@ -218,6 +218,40 @@ Wolkvox ya marca cada código de tipificación con banderas `hit` (cumplió el
 objetivo) y `rpc` (hubo contacto real) en `information.php?api=activity_codes`.
 El informe usa esa configuración, que es la que la propia operación definió.
 
+## Tablero HTML para coordinación
+
+El Excel es la capa de **evidencia** (filtros, detalle día a día, trazabilidad);
+el tablero es la capa de **decisión** para el coordinador: a quién acompañar hoy
+y por qué. Los dos salen de la misma corrida.
+
+**Una sola fuente de cálculo.** El tablero recibe el mismo dict `cuadros` que
+alimenta el Excel y no recalcula nada: `tablero_datos.construir()` solo
+selecciona, aplana y serializa. Si un número difiere entre los dos, es un error
+de presentación, no dos verdades. Cualquier cifra nueva se agrega en
+`gestion.py` o `asistencia.py`, nunca en el renderizador.
+
+**Un archivo único con selector.** `tablero.html` acumula el histórico y trae
+selector Día / Semana, así que la operación conserva un solo enlace. Cada
+corrida deja el JSON de su periodo en `tablero/{etiqueta}.json` y el HTML se
+rearma leyendo la carpeta completa. Ese mismo archivo resuelve los deltas
+("vs. semana 31"): se busca el periodo previo del mismo tipo en el almacén, sin
+volver a consultar la API. Retención por defecto: 21 días, 16 semanas, 13 meses.
+
+**`RUTA_TABLERO` tiene que apuntar a la carpeta compartida.** El workspace de
+Jenkins no sirve: el job diario y el semanal tienen workspaces distintos y cada
+uno publicaría un tablero con solo sus propios periodos.
+
+**No archivar el tablero como artefacto de Jenkins.** Jenkins sirve lo archivado
+con una CSP que bloquea el CSS y el JS embebidos, y la página sale en blanco.
+`main.py` lo escribe directo en `RUTA_TABLERO`; el `.xlsx` sí se archiva.
+
+Las escrituras (JSON y HTML) son atómicas (`.tmp` + `os.replace`): una corrida
+que muera a mitad deja el tablero anterior intacto, nunca un archivo truncado.
+
+Los umbrales del semáforo salen de `horarios.yaml` y se muestran impresos en
+cada columna (`meta ≤ 30 %`), porque un semáforo cuyo umbral nadie conoce no
+sirve para nada.
+
 ## Despliegue en Jenkins
 
 El `Jenkinsfile` de la raíz cubre los tres modos con un parámetro `PERIODO`.

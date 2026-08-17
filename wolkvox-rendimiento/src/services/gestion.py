@@ -141,6 +141,26 @@ def auxiliares_por_tipo(df_aux: pd.DataFrame) -> pd.DataFrame:
                  .reset_index(drop=True))
 
 
+def curva_horaria(df_llamadas: pd.DataFrame) -> pd.DataFrame:
+    """Llamadas por hora del día y agente, en formato largo.
+
+    Solo voz. El CDR digital (chat_1) fecha la conversación por su APERTURA y
+    una conversación de WhatsApp puede seguir viva 23 horas, así que atribuirla
+    a una hora concreta diría algo falso sobre cuándo se trabajó. La curva de
+    voz sí responde la pregunta real: en qué franjas se gestiona y si la caída
+    del mediodía se alargó.
+    """
+    if df_llamadas.empty or not {"hora", "agent_name"} <= set(df_llamadas.columns):
+        return pd.DataFrame(columns=["Hora", "Agente", "Llamadas"])
+
+    tabla = (df_llamadas.groupby(["hora", "agent_name"], as_index=False)
+                        .size()
+                        .rename(columns={"hora": "Hora", "agent_name": "Agente",
+                                         "size": "Llamadas"}))
+    tabla["Hora"] = pd.to_numeric(tabla["Hora"], errors="coerce").fillna(0).astype(int)
+    return tabla.sort_values(["Hora", "Agente"]).reset_index(drop=True)
+
+
 def _pivote_auxiliares(df_aux: pd.DataFrame, formato: str,
                        indice: list[str] | None = None) -> pd.DataFrame:
     """Tabla cruzada: estados auxiliares en columnas, ordenados por peso

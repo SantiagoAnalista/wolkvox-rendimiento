@@ -32,6 +32,13 @@ pipeline {
         WOLKVOX_TOKEN  = credentials('wolkvox-token-prod')
         WOLKVOX_SERVER = '0010'
         PYTHONIOENCODING = 'utf-8'   // los nombres de agente llevan tildes y ñ
+
+        // Carpeta compartida desde la que la operación abre el tablero. Ahí
+        // viven tablero.html y su almacén, para que el job diario y el
+        // semanal acumulen en el MISMO histórico: el workspace de Jenkins no
+        // sirve, cada job tiene el suyo.
+        // La cuenta del servicio de Jenkins necesita escritura sobre la ruta.
+        RUTA_TABLERO = '\\\\servidor\\operacion\\rendimiento'
     }
 
     stages {
@@ -68,8 +75,15 @@ pipeline {
 
         stage('Publicar') {
             steps {
+                // El .xlsx es el entregable auditable. El tablero NO se archiva
+                // en Jenkins a propósito: Jenkins sirve lo archivado con una CSP
+                // que bloquea el CSS y el JS embebidos y la página saldría en
+                // blanco. main.py ya lo escribió directamente en RUTA_TABLERO.
                 archiveArtifacts artifacts: 'src/output/*.xlsx',
                                  fingerprint: true, onlyIfSuccessful: true
+
+                // El Excel sí se copia: el tablero enlaza a él por nombre.
+                bat 'copy /Y src\\output\\*.xlsx "%RUTA_TABLERO%\\"'
             }
         }
     }

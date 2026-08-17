@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pulso de Operación</title>
+<style>
+/* ── Tokens ─────────────────────────────────────────────────────────
+   Neutros cálidos, azul #1f3864 (el del Excel) reservado para cromo y
+   nunca para series. La paleta categórica está validada para daltonismo
+   en ambos modos; no cambiar los hex sin revalidar.                  */
+:root {
+  color-scheme: light;
+  --plane:#f4f5f3; --surface:#fcfcfb; --surface-2:#f0efec;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7;
+  --hair:rgba(11,11,11,.10); --hair-2:rgba(11,11,11,.06);
+  --brand:#1f3864; --brand-ink:#1f3864; --brand-soft:#e7ecf5;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4;
+  --bar-loud:#2a78d6; --bar-quiet:#86b6ef;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --delta-good:#006300; --delta-bad:#b02c2c;
+  --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
+  --r:10px; --shadow:0 1px 2px rgba(11,11,11,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835;
+    --hair:rgba(255,255,255,.10); --hair-2:rgba(255,255,255,.06);
+    --brand:#a8c4ee; --brand-ink:#a8c4ee; --brand-soft:#1d283a;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181;
+    --bar-loud:#3987e5; --bar-quiet:#184f95;
+    --delta-good:#0ca30c; --delta-bad:#e66767;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+  --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835;
+  --hair:rgba(255,255,255,.10); --hair-2:rgba(255,255,255,.06);
+  --brand:#a8c4ee; --brand-ink:#a8c4ee; --brand-soft:#1d283a;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181;
+  --bar-loud:#3987e5; --bar-quiet:#184f95;
+  --delta-good:#0ca30c; --delta-bad:#e66767;
+  --shadow:none;
+}
+
+*{box-sizing:border-box}
+/* .pick fija display, que gana sobre el [hidden] de la hoja del navegador. */
+[hidden]{display:none !important}
+body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--sans);
+     font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:0 20px 72px}
+
+.top{border-bottom:1px solid var(--hair);background:var(--surface)}
+.top-in{max-width:1240px;margin:0 auto;padding:22px 20px 20px;display:flex;
+        flex-wrap:wrap;gap:16px 28px;align-items:flex-end;justify-content:space-between}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+         text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+h1{margin:0;font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.02em;
+   text-wrap:balance}
+.top-meta{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);text-align:right;line-height:1.7}
+.top-meta b{color:var(--ink);font-weight:600}
+.top-meta a{color:var(--brand-ink)}
+
+.filters{position:sticky;top:0;z-index:30;background:var(--surface);border-bottom:1px solid var(--hair)}
+.filters-in{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;
+            flex-wrap:wrap;gap:14px;align-items:center}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:9px;padding:3px;gap:2px}
+.seg button{font:600 13.5px/1 var(--sans);color:var(--ink-2);background:none;border:0;
+            padding:8px 15px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--brand-ink);box-shadow:var(--shadow)}
+.seg button:hover:not([aria-pressed="true"]){color:var(--ink)}
+.pick{display:inline-flex;align-items:center;gap:8px}
+.pick label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+select{font:500 13.5px var(--sans);color:var(--ink);background:var(--surface);
+       border:1px solid var(--hair);border-radius:8px;padding:8px 11px;cursor:pointer}
+.spacer{flex:1 1 auto}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+
+.foco{display:flex;gap:16px;align-items:flex-start;background:var(--surface);
+      border:1px solid var(--hair);border-radius:var(--r);padding:16px 18px;
+      margin-top:16px;box-shadow:var(--shadow)}
+.foco-rail{width:3px;align-self:stretch;border-radius:2px;background:var(--brand);flex:none}
+.foco h2{margin:0 0 3px;font-size:15.5px;font-weight:700;letter-spacing:-.01em}
+.foco p{margin:0;font-size:13.5px;color:var(--ink-2);max-width:78ch}
+
+.kpis{display:grid;gap:12px;margin-top:16px;grid-template-columns:repeat(auto-fit,minmax(184px,1fr))}
+.kpi{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);
+     padding:14px 15px 13px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:3px}
+.k-label{font-size:12.5px;color:var(--ink-2);font-weight:500}
+.k-value{font-size:30px;font-weight:650;letter-spacing:-.025em;line-height:1.1}
+.k-value .u{font-size:17px;font-weight:500;color:var(--ink-2);margin-left:1px}
+.k-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.k-meta{font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.delta{font:600 11.5px/1 var(--mono);display:inline-flex;align-items:center;gap:3px}
+.delta.up{color:var(--delta-good)} .delta.down{color:var(--delta-bad)} .delta.flat{color:var(--muted)}
+
+.grid{display:grid;gap:12px;margin-top:12px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);
+      padding:16px 18px 14px;box-shadow:var(--shadow);min-width:0;grid-column:span 12}
+.card.half{grid-column:span 6}
+@media (max-width:900px){.card.half{grid-column:span 12}}
+.card h3{margin:0;font-size:14.5px;font-weight:650;letter-spacing:-.01em}
+.card .sub{margin:3px 0 0;font-size:12.5px;color:var(--muted);max-width:72ch}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:12px 0 2px}
+.lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+.lg i{width:11px;height:11px;border-radius:3px;flex:none;display:inline-block}
+.lg .glyph{width:15px;height:15px;border-radius:3px;flex:none;display:inline-flex;
+           align-items:center;justify-content:center;font:700 9.5px/1 var(--sans)}
+
+.plot{margin-top:10px;overflow-x:auto}
+.plot svg{display:block}
+text{font-family:var(--sans)}
+
+details.tv{margin-top:12px;border-top:1px solid var(--hair-2);padding-top:9px}
+details.tv summary{font-size:12.5px;color:var(--ink-2);cursor:pointer;font-weight:500;
+                   list-style:none;display:inline-flex;align-items:center;gap:6px}
+details.tv summary::-webkit-details-marker{display:none}
+details.tv summary::before{content:"▸";font-size:10px;color:var(--muted)}
+details.tv[open] summary::before{content:"▾"}
+details.tv summary:hover{color:var(--ink)}
+
+.tw{overflow-x:auto;margin-top:10px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--hair-2);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+         font-weight:600;border-bottom:1px solid var(--hair);position:sticky;top:0;background:var(--surface)}
+thead th span{font-weight:400;text-transform:none;letter-spacing:0}
+tbody td{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+tbody td:first-child{color:var(--ink);font-weight:500}
+tbody tr:last-child td{border-bottom:0}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font:600 11.5px/1 var(--sans);
+      padding:4px 8px;border-radius:20px;border:1px solid transparent;white-space:nowrap}
+.pill .g{font-size:10px}
+.pill.ok{color:var(--delta-good);background:color-mix(in srgb,var(--good) 12%,transparent)}
+.pill.wa{color:#7a5200;background:color-mix(in srgb,var(--warn) 22%,transparent)}
+.pill.se{color:#8a3d16;background:color-mix(in srgb,var(--serious) 22%,transparent)}
+.pill.cr{color:var(--delta-bad);background:color-mix(in srgb,var(--crit) 14%,transparent)}
+.pill.nu{color:var(--ink-2);background:var(--surface-2)}
+:root[data-theme="dark"] .pill.wa,:root[data-theme="dark"] .pill.se{color:#f0d9a8}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .pill.wa,
+  :root:not([data-theme="light"]) .pill.se{color:#f0d9a8}
+}
+.alertas{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+
+#tip{position:fixed;z-index:90;pointer-events:none;opacity:0;transition:opacity .1s linear;
+     background:var(--surface);color:var(--ink);border:1px solid var(--hair);border-radius:8px;
+     padding:8px 10px;font-size:12px;line-height:1.45;box-shadow:0 6px 20px rgba(11,11,11,.14);max-width:260px}
+#tip .t-h{font-weight:650;margin-bottom:3px}
+#tip .t-r{color:var(--ink-2);font-variant-numeric:tabular-nums}
+#tip .t-r b{color:var(--ink);font-weight:600}
+
+.empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:13px;
+       background:var(--surface-2);border-radius:8px;margin-top:10px}
+.note{margin-top:10px;font-size:12px;color:var(--muted);border-left:2px solid var(--axis);
+      padding-left:10px;max-width:80ch}
+
+footer{margin-top:28px;padding-top:20px;border-top:1px solid var(--hair);
+       font-size:12.5px;color:var(--ink-2)}
+footer p{margin:0 0 6px}
+footer code{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);
+            padding:1px 5px;border-radius:4px}
+
+:where(button,select,summary,a,[tabindex]):focus-visible{
+  outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-in">
+    <div>
+      <p class="eyebrow">Wolkvox · Informe de gestión de asesores</p>
+      <h1>Pulso de Operación</h1>
+    </div>
+    <div class="top-meta" id="meta"></div>
+  </div>
+</div>
+
+<div class="filters">
+  <div class="filters-in">
+    <div class="seg" id="seg" role="group" aria-label="Alcance del tablero"></div>
+    <div class="pick" id="pick">
+      <label for="sel">Periodo</label>
+      <select id="sel"></select>
+    </div>
+    <div class="spacer"></div>
+    <p class="hint">Las cifras son las mismas del Excel de la corrida: el tablero no recalcula nada.</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="foco">
+    <div class="foco-rail"></div>
+    <div><h2 id="foco-t"></h2><p id="foco-p"></p></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid" id="grid"></div>
+  <footer id="pie"></footer>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script id="datos" type="application/json">__PAYLOAD__</script>
+<script>
+"use strict";
+
+const DATA = JSON.parse(document.getElementById("datos").textContent);
+const PERIODOS = DATA.periodos || [];
+
+const $ = (s, r = document) => r.querySelector(s);
+const num = v => {
+  if (typeof v === "number") return v;
+  if (v == null) return null;
+  const n = parseFloat(String(v).replace("%", "").replace(",", ".").trim());
+  return Number.isFinite(n) ? n : null;
+};
+const fmt = (v, d = 1) => v == null ? "—"
+  : v.toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
+const int = v => v == null ? "—" : Math.round(v).toLocaleString("es-CO");
+const dur = h => h < 1 ? `${Math.round(h * 60)} min` : `${fmt(h)} h`;
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/** "ALZATE VALENCIA CAROLINA" -> "Carolina Alzate".
+ *  Wolkvox entrega APELLIDO1 APELLIDO2 NOMBRE1 [NOMBRE2]. */
+const CACHE = new Map();
+function corto(full) {
+  if (CACHE.has(full)) return CACHE.get(full);
+  const t = String(full).trim().split(/\s+/);
+  const tc = w => w.charAt(0) + w.slice(1).toLowerCase();
+  const nombre = t.length >= 3 ? t[2] : t[t.length - 1];
+  const out = t.length < 2 ? tc(t[0]) : `${tc(nombre)} ${tc(t[0])}`;
+  CACHE.set(full, out);
+  return out;
+}
+
+/** Ink o blanco según la luminancia del relleno, para texto dentro de marcas. */
+function sobre(tok) {
+  const c = getComputedStyle(document.documentElement).getPropertyValue(tok).trim();
+  const m = c.match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return "#fff";
+  const n = parseInt(m[1], 16);
+  const L = (0.2126 * (n >> 16 & 255) + 0.7152 * (n >> 8 & 255) + 0.0722 * (n & 255)) / 255;
+  return L > 0.62 ? "#0b0b0b" : "#ffffff";
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────── */
+const TIP = $("#tip");
+function tipOn(e, html) {
+  TIP.innerHTML = html;
+  TIP.style.opacity = "1";
+  const r = TIP.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  TIP.style.left = x + "px"; TIP.style.top = y + "px";
+}
+const tipOff = () => { TIP.style.opacity = "0"; };
+function hover(el, html) {
+  el.addEventListener("mousemove", e => tipOn(e, html));
+  el.addEventListener("mouseleave", tipOff);
+  el.setAttribute("tabindex", "0");
+  el.addEventListener("focus", e => {
+    const b = e.target.getBoundingClientRect();
+    tipOn({ clientX: b.left + b.width / 2, clientY: b.top }, html);
+  });
+  el.addEventListener("blur", tipOff);
+}
+
+/* ── SVG ─────────────────────────────────────────────────────────── */
+const NS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs = {}, parent = null) {
+  const el = document.createElementNS(NS, tag);
+  for (const k in attrs) if (attrs[k] != null) el.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+/** Rect con radio por esquina: extremos de dato redondeados, base recta. */
+function rrect(x, y, w, h, tl, tr, br, bl) {
+  const r = Math.min(w, h) / 2;
+  [tl, tr, br, bl] = [tl, tr, br, bl].map(v => Math.max(0, Math.min(v, r)));
+  return `M${x + tl},${y}H${x + w - tr}${tr ? `a${tr},${tr} 0 0 1 ${tr},${tr}` : ""}` +
+    `V${y + h - br}${br ? `a${br},${br} 0 0 1 ${-br},${br}` : ""}` +
+    `H${x + bl}${bl ? `a${bl},${bl} 0 0 1 ${-bl},${-bl}` : ""}` +
+    `V${y + tl}${tl ? `a${tl},${tl} 0 0 1 ${tl},${-tl}` : ""}Z`;
+}
+const AX = { fill: "var(--muted)", "font-size": "11" };
+
+/* ── Piezas ──────────────────────────────────────────────────────── */
+function card(cls, titulo, sub) {
+  const c = document.createElement("section");
+  c.className = "card" + (cls ? " " + cls : "");
+  c.innerHTML = `<div><h3>${esc(titulo)}</h3>` + (sub ? `<p class="sub">${esc(sub)}</p>` : "") + `</div>`;
+  return c;
+}
+function legend(items) {
+  const d = document.createElement("div");
+  d.className = "legend";
+  d.innerHTML = items.map(i => `<span class="lg"><i style="background:${i.color}"></i>${esc(i.label)}</span>`).join("");
+  return d;
+}
+function vistaTabla(cols, filas, etiqueta = "Ver los datos en tabla") {
+  const d = document.createElement("details");
+  d.className = "tv";
+  d.innerHTML = `<summary>${esc(etiqueta)}</summary><div class="tw"><table><thead><tr>` +
+    cols.map(c => `<th>${c}</th>`).join("") + `</tr></thead><tbody>` +
+    filas.map(f => `<tr>${f.map(v => `<td>${v}</td>`).join("")}</tr>`).join("") +
+    `</tbody></table></div>`;
+  return d;
+}
+function vacio(txt) {
+  const e = document.createElement("div");
+  e.className = "empty";
+  e.textContent = txt;
+  return e;
+}
+const pill = (k, txt, glifo) => `<span class="pill ${k}"><span class="g">${glifo}</span>${esc(txt)}</span>`;
+
+/* ── Estado de puntualidad ───────────────────────────────────────── */
+/* `Estado` puede venir como "Tarde", "Temprano", "Tarde y Temprano", "OK"
+   o "Sin conexión"; hay que comprobar por inclusión, no por igualdad. */
+function estadoPunt(fila, U) {
+  const e = String(fila["Estado"] ?? "");
+  const min = num(fila["Min tarde"]) || 0;
+  if (e.includes("Sin conexión")) return { k: "nu", tok: null, glifo: "–", txt: "Sin conexión" };
+  if (e.includes("Tarde")) {
+    const grave = min > U.tarde_grave_min;
+    const extra = e.includes("Temprano") ? " y salió temprano" : "";
+    return grave
+      ? { k: "cr", tok: "--crit", glifo: "✕", txt: `Tarde ${fmt(min, 0)} min${extra}` }
+      : { k: "wa", tok: "--warn", glifo: "!", txt: `Tarde ${fmt(min, 1)} min${extra}` };
+  }
+  if (e.includes("Temprano")) return { k: "se", tok: "--serious", glifo: "↰", txt: "Salió temprano" };
+  return { k: "ok", tok: "--good", glifo: "✓", txt: "A tiempo" };
+}
+const colorEstado = st => st.tok ? `var(${st.tok})` : "var(--surface-2)";
+
+/* ══ Distribución del tiempo (apilada al 100 %) ═══════════════════ */
+const ESTADOS = [
+  { k: "% En llamada", base: "En llamada", label: "En llamada", color: "var(--s1)", tok: "--s1" },
+  { k: "% ACW", base: "ACW", label: "Cierre posterior (ACW)", color: "var(--s2)", tok: "--s2" },
+  { k: "% Ring", base: "Ring", label: "Timbrando", color: "var(--s3)", tok: "--s3" },
+  { k: "% Ready", base: "Ready", label: "Disponible sin gestionar", color: "var(--s4)", tok: "--s4" },
+  { k: "% Auxiliar", base: "Auxiliar", label: "Fuera de línea (auxiliares)", color: "var(--s5)", tok: "--s5" }
+];
+
+function chartDistribucion(tiempos) {
+  const c = card("half", "En qué se va la jornada",
+    "Reparto del tiempo logueado de cada asesor. La barra suma 100 %, así que las anchuras se comparan entre asesores.");
+  if (!tiempos.length) { c.appendChild(vacio("Sin tiempos registrados en el periodo.")); return c; }
+  c.appendChild(legend(ESTADOS));
+
+  const rows = [...tiempos].sort((a, b) => (num(b["% Auxiliar"]) || 0) - (num(a["% Auxiliar"]) || 0));
+  const PAD_L = 118, PAD_R = 16, BH = 22, GAP_ROW = 16, TOP = 6, GAP = 2, W = 560;
+  const H = TOP + rows.length * (BH + GAP_ROW);
+  const plot = document.createElement("div"); plot.className = "plot";
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
+  const bw = W - PAD_L - PAD_R;
+
+  rows.forEach((r, i) => {
+    const y = TOP + i * (BH + GAP_ROW);
+    svg("text", { x: PAD_L - 10, y: y + BH / 2 + 4, "text-anchor": "end",
+                  fill: "var(--ink)", "font-size": "12", "font-weight": "500" }, s)
+      .textContent = corto(r.Agente);
+
+    const total = ESTADOS.reduce((a, e) => a + (num(r[e.k]) || 0), 0) || 100;
+    let x = PAD_L;
+    ESTADOS.forEach((e, j) => {
+      const pct = num(r[e.k]) || 0;
+      const raw = bw * pct / total;
+      const last = j === ESTADOS.length - 1, first = j === 0;
+      const w = Math.max(0, raw - (last ? 0 : GAP));
+      if (raw <= 0.4) { x += raw; return; }
+      const p = svg("path", { d: rrect(x, y, w, BH, first ? 4 : 0, last ? 4 : 0, last ? 4 : 0, first ? 4 : 0),
+                              fill: e.color }, s);
+      hover(p, `<div class="t-h">${esc(corto(r.Agente))}</div>` +
+        `<div class="t-r">${esc(e.label)}: <b>${fmt(pct)} %</b></div>` +
+        `<div class="t-r">Tiempo: <b>${esc(r[e.base] ?? "—")}</b></div>`);
+      const txt = `${Math.round(pct)}%`;
+      if (w >= txt.length * 7 + 14) {
+        svg("text", { x: x + w / 2, y: y + BH / 2 + 4, "text-anchor": "middle",
+                      fill: sobre(e.tok), "font-size": "11", "font-weight": "600",
+                      "pointer-events": "none" }, s).textContent = txt;
+      }
+      x += raw;
+    });
+  });
+
+  c.appendChild(plot);
+  c.appendChild(vistaTabla(["Asesor", "Logueado", ...ESTADOS.map(e => esc(e.label))],
+    rows.map(r => [esc(corto(r.Agente)), esc(r.Logueado ?? "—"),
+      ...ESTADOS.map(e => fmt(num(r[e.k])) + " %")])));
+  return c;
+}
+
+/* ══ Calendario de puntualidad ════════════════════════════════════ */
+function chartCalendario(detalle, U) {
+  const c = card("half", "Puntualidad, día por día",
+    `Una celda por asesor y fecha. Distingue “llegó tarde 4 veces” de “llegó tarde 4 lunes”, que son problemas distintos. Tolerancia ${U.tolerancia_min} min.`);
+  if (!detalle.length) { c.appendChild(vacio("Sin días laborales evaluados en el periodo.")); return c; }
+
+  const d = document.createElement("div");
+  d.className = "legend";
+  d.innerHTML = [
+    { c: "var(--good)", tok: "--good", g: "✓", t: "A tiempo" },
+    { c: "var(--warn)", tok: "--warn", g: "!", t: `Tarde ≤ ${U.tarde_grave_min} min` },
+    { c: "var(--crit)", tok: "--crit", g: "✕", t: `Tarde > ${U.tarde_grave_min} min` },
+    { c: "var(--serious)", tok: "--serious", g: "↰", t: "Salió temprano" },
+    { c: "var(--surface-2)", tok: null, g: "–", t: "Sin conexión" }
+  ].map(i => `<span class="lg"><span class="glyph" style="background:${i.c};color:${i.tok ? sobre(i.tok) : "var(--muted)"}">${i.g}</span>${esc(i.t)}</span>`).join("");
+  c.appendChild(d);
+
+  const fechas = [...new Set(detalle.map(r => r.Fecha))].sort();
+  const agentes = [...new Set(detalle.map(r => r.Agente))].sort((a, b) => corto(a).localeCompare(corto(b)));
+  const idx = new Map(detalle.map(r => [r.Agente + "|" + r.Fecha, r]));
+  const dow = new Map(detalle.map(r => [r.Fecha, String(r["Día"] ?? "").slice(0, 2)]));
+
+  const PAD_L = 118, GAP = 3, OBJ = 560;
+  const CELL = Math.max(18, Math.min(44, Math.floor((OBJ - PAD_L) / fechas.length) - GAP));
+  const DOW = CELL >= 26, TOP = DOW ? 34 : 22;
+  const W = PAD_L + fechas.length * (CELL + GAP), H = TOP + agentes.length * (CELL + GAP) + 4;
+  const plot = document.createElement("div"); plot.className = "plot";
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img" }, plot);
+
+  const paso = CELL >= 24 ? 1 : (fechas.length > 22 ? 3 : 2);
+  fechas.forEach((f, j) => {
+    if (j % paso) return;
+    const cx = PAD_L + j * (CELL + GAP) + CELL / 2;
+    svg("text", { x: cx, y: TOP - 8, "text-anchor": "middle", ...AX }, s).textContent = f.slice(8, 10);
+    if (DOW) svg("text", { x: cx, y: TOP - 21, "text-anchor": "middle", ...AX, "font-size": "9.5" }, s)
+      .textContent = dow.get(f) || "";
+  });
+
+  agentes.forEach((a, i) => {
+    const y = TOP + i * (CELL + GAP);
+    svg("text", { x: PAD_L - 10, y: y + CELL / 2 + 4, "text-anchor": "end",
+                  fill: "var(--ink)", "font-size": "12", "font-weight": "500" }, s).textContent = corto(a);
+    fechas.forEach((f, j) => {
+      const x = PAD_L + j * (CELL + GAP);
+      const r = idx.get(a + "|" + f);
+      if (!r) { svg("rect", { x, y, width: CELL, height: CELL, rx: 4, fill: "none", stroke: "var(--grid)" }, s); return; }
+      const st = estadoPunt(r, U);
+      const g = svg("g", {}, s);
+      svg("rect", { x, y, width: CELL, height: CELL, rx: 4, fill: colorEstado(st) }, g);
+      svg("text", { x: x + CELL / 2, y: y + CELL / 2 + CELL * 0.17, "text-anchor": "middle",
+                    "font-size": Math.min(15, CELL * 0.48), "font-weight": "700",
+                    "pointer-events": "none",
+                    fill: st.tok ? sobre(st.tok) : "var(--muted)" }, g).textContent = st.glifo;
+      hover(g, `<div class="t-h">${esc(corto(a))} · ${esc(r.Fecha)} (${esc(r["Día"] ?? "")})</div>` +
+        `<div class="t-r">Horario: <b>${esc(r.Horario ?? "—")}</b></div>` +
+        `<div class="t-r">Entrada real: <b>${esc(r.Entrada || "—")}</b></div>` +
+        `<div class="t-r">${esc(st.txt)}</div>`);
+    });
+  });
+
+  c.appendChild(plot);
+  c.appendChild(vistaTabla(["Asesor", "Fecha", "Día", "Horario", "Entrada", "Salida", "Logueado", "Estado"],
+    detalle.map(r => [esc(corto(r.Agente)), esc(r.Fecha), esc(r["Día"] ?? ""), esc(r.Horario ?? ""),
+      esc(r.Entrada || "—"), esc(r.Salida || "—"), esc(r.Logueado || "—"), esc(estadoPunt(r, U).txt)])));
+  return c;
+}
+
+/* ══ Conexión del día ═════════════════════════════════════════════ */
+function panelConexion(detalle, U) {
+  const c = card("half", "Conexión del día",
+    `Entrada real contra el horario asignado. Tolerancia de ${U.tolerancia_min} minutos.`);
+  if (!detalle.length) { c.appendChild(vacio("Sin días laborales evaluados.")); return c; }
+
+  const orden = { cr: 0, wa: 1, se: 2, nu: 3, ok: 4 };
+  const filas = detalle.map(r => ({ r, st: estadoPunt(r, U) }))
+    .sort((a, b) => orden[a.st.k] - orden[b.st.k] || corto(a.r.Agente).localeCompare(corto(b.r.Agente)));
+
+  const pend = filas.filter(f => f.st.k !== "ok").length;
+  const res = document.createElement("p");
+  res.className = "sub"; res.style.marginTop = "10px";
+  res.innerHTML = pend
+    ? `<b style="color:var(--ink)">${pend} de ${filas.length}</b> asesores con novedad en la jornada.`
+    : `<b style="color:var(--ink)">Los ${filas.length} asesores</b> cumplieron horario.`;
+  c.appendChild(res);
+
+  const w = document.createElement("div");
+  w.className = "tw"; w.style.marginTop = "10px";
+  w.innerHTML = `<table><thead><tr><th>Asesor</th><th>Horario</th><th>Entrada</th><th>Salida</th><th>Logueado</th><th>Estado</th></tr></thead><tbody>` +
+    filas.map(f => `<tr><td>${esc(corto(f.r.Agente))}</td><td>${esc(f.r.Horario ?? "")}</td>` +
+      `<td>${esc(f.r.Entrada || "—")}</td><td>${esc(f.r.Salida || "—")}</td>` +
+      `<td>${esc(f.r.Logueado || "—")}</td><td>${pill(f.st.k, f.st.txt, f.st.glifo)}</td></tr>`).join("") +
+    `</tbody></table>`;
+  c.appendChild(w);
+  return c;
+}
+
+/* ══ Conexión vs efectividad (dispersión con cuadrantes) ══════════ */
+function chartCruce(cruce, U) {
+  const c = card("half", "Conectado ≠ productivo",
+    `Cada punto es un asesor. Abajo a la derecha está el caso a atender: mucho tiempo conectado, poca gestión efectiva. La línea marca la meta de ${U.efectividad_baja} %.`);
+  if (!cruce.length) { c.appendChild(vacio("Sin asesores con gestión en el periodo.")); return c; }
+
+  const W = 560, H = 300, L = 46, R = 20, T = 14, B = 40;
+  const pw = W - L - R, ph = H - T - B;
+  const xs = cruce.map(r => num(r["Ocupación %"]) || 0);
+  const ys = cruce.map(r => num(r["% Efectividad total"]) || 0);
+  const xMax = Math.max(90, Math.ceil(Math.max(...xs) / 10) * 10);
+  const xMin = Math.min(40, Math.floor(Math.min(...xs) / 10) * 10);
+  const yMax = Math.max(20, Math.ceil(Math.max(...ys) / 5) * 5);
+  const X = v => L + (v - xMin) / (xMax - xMin) * pw;
+  const Y = v => T + ph - (v / yMax) * ph;
+  const REF = 70;
+
+  const plot = document.createElement("div"); plot.className = "plot";
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
+
+  for (let v = 0; v <= yMax; v += yMax / 4) {
+    svg("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "var(--grid)", "stroke-width": 1 }, s);
+    svg("text", { x: L - 9, y: Y(v) + 4, "text-anchor": "end", ...AX }, s).textContent = Math.round(v) + "%";
+  }
+  for (let v = xMin; v <= xMax; v += 10)
+    svg("text", { x: X(v), y: H - B + 18, "text-anchor": "middle", ...AX }, s).textContent = v + "%";
+  svg("line", { x1: L, x2: W - R, y1: T + ph, y2: T + ph, stroke: "var(--axis)", "stroke-width": 1 }, s);
+  // Los dos cortes del cuadrante: hairlines sólidas, nunca punteadas.
+  svg("line", { x1: L, x2: W - R, y1: Y(U.efectividad_baja), y2: Y(U.efectividad_baja), stroke: "var(--axis)", "stroke-width": 1 }, s);
+  svg("text", { x: W - R - 2, y: Y(U.efectividad_baja) - 6, "text-anchor": "end", fill: "var(--muted)", "font-size": "10.5" }, s)
+    .textContent = `meta ${U.efectividad_baja} %`;
+  svg("line", { x1: X(REF), x2: X(REF), y1: T, y2: T + ph, stroke: "var(--axis)", "stroke-width": 1 }, s);
+  svg("text", { x: X(REF) + 5, y: T + 10, fill: "var(--muted)", "font-size": "10.5" }, s)
+    .textContent = `ocupación ${REF} %`;
+  svg("text", { x: W - R - 2, y: T + ph - 7, "text-anchor": "end", fill: "var(--muted)",
+                "font-size": "10.5", "font-style": "italic" }, s).textContent = "conectado, poco efectivo";
+  svg("text", { x: L + pw / 2, y: H - 4, "text-anchor": "middle", ...AX }, s)
+    .textContent = "Aprovechamiento del tiempo conectado (ocupación)";
+  svg("text", { x: 13, y: T + ph / 2, "text-anchor": "middle",
+                transform: `rotate(-90 13 ${T + ph / 2})`, ...AX }, s).textContent = "Efectividad";
+
+  cruce.forEach(r => {
+    const x = X(num(r["Ocupación %"]) || 0), y = Y(num(r["% Efectividad total"]) || 0);
+    const g = svg("g", {}, s);
+    svg("circle", { cx: x, cy: y, r: 7, fill: "var(--surface)" }, g);   // anillo de superficie
+    svg("circle", { cx: x, cy: y, r: 5, fill: "var(--s1)" }, g);
+    svg("circle", { cx: x, cy: y, r: 14, fill: "transparent" }, g);     // objetivo de hover ~28px
+    svg("text", { x: x + 12, y: y + 4, fill: "var(--ink-2)", "font-size": "11.5",
+                  "font-weight": "500", "pointer-events": "none" }, g)
+      .textContent = corto(r.Agente).split(" ")[0];
+    hover(g, `<div class="t-h">${esc(corto(r.Agente))}</div>` +
+      `<div class="t-r">Ocupación: <b>${fmt(num(r["Ocupación %"]))} %</b></div>` +
+      `<div class="t-r">Efectividad: <b>${fmt(num(r["% Efectividad total"]))} %</b></div>` +
+      `<div class="t-r">Gestiones/día: <b>${fmt(num(r["Gestiones por día"]))}</b></div>` +
+      `<div class="t-r">Sin registrar: <b>${fmt(num(r["% Sin tipificar"]))} %</b></div>`);
+  });
+
+  c.appendChild(plot);
+  c.appendChild(vistaTabla(
+    ["Asesor", "Ocupación", "En llamada", "Fuera de línea", "Gestiones/día", "Sin registrar", "Efectivas/día", "Efectividad"],
+    cruce.map(r => [esc(corto(r.Agente)), fmt(num(r["Ocupación %"])) + " %", fmt(num(r["% En llamada"])) + " %",
+      fmt(num(r["% Auxiliar"])) + " %", fmt(num(r["Gestiones por día"])), fmt(num(r["% Sin tipificar"])) + " %",
+      fmt(num(r["Efectivas por día"])), fmt(num(r["% Efectividad total"])) + " %"])));
+  return c;
+}
+
+/* ══ Auxiliares por tipo ══════════════════════════════════════════ */
+function chartAuxiliares(aux) {
+  const c = card("half", "Tiempo fuera de línea, por motivo",
+    "Suma del equipo en el periodo, ordenada por duración: lo primero de la lista es donde hay algo que revisar.");
+  const tot = new Map();
+  aux.forEach(r => tot.set(r["Estado auxiliar"], (tot.get(r["Estado auxiliar"]) || 0) + (num(r.Horas) || 0)));
+  // Bajo un minuto no es un motivo de pausa, es ruido de registro.
+  const rows = [...tot.entries()].filter(([, v]) => v >= 1 / 60).sort((a, b) => b[1] - a[1]);
+  if (!rows.length) { c.appendChild(vacio("Sin auxiliares registrados en el periodo.")); return c; }
+
+  const PAD_L = 132, PAD_R = 54, BH = 18, GAP_ROW = 12, TOP = 4, W = 560;
+  const H = TOP + rows.length * (BH + GAP_ROW), max = rows[0][1] || 1;
+  const plot = document.createElement("div"); plot.className = "plot";
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
+
+  rows.forEach(([k, v], i) => {
+    const y = TOP + i * (BH + GAP_ROW);
+    svg("text", { x: PAD_L - 10, y: y + BH / 2 + 4, "text-anchor": "end", fill: "var(--ink)", "font-size": "12" }, s)
+      .textContent = k;
+    const w = Math.max(2, (W - PAD_L - PAD_R) * v / max);
+    const p = svg("path", { d: rrect(PAD_L, y, w, BH, 0, 4, 4, 0), fill: "var(--s1)" }, s);
+    hover(p, `<div class="t-h">${esc(k)}</div><div class="t-r">Total del equipo: <b>${dur(v)}</b></div>`);
+    svg("text", { x: PAD_L + w + 8, y: y + BH / 2 + 4, fill: "var(--ink-2)",
+                  "font-size": "11.5", "font-weight": "600" }, s).textContent = dur(v);
+  });
+
+  c.appendChild(plot);
+  c.appendChild(vistaTabla(["Estado auxiliar", "Tiempo del equipo"], rows.map(([k, v]) => [esc(k), dur(v)])));
+  return c;
+}
+
+/* ══ Curva horaria ════════════════════════════════════════════════ */
+function chartCurva(curva) {
+  const c = card("half", "Llamadas por hora",
+    "Solo voz. Sirve para ver si la caída del mediodía es la esperada o si se alargó.");
+  if (!curva.length) { c.appendChild(vacio("Sin llamadas registradas en el día.")); return c; }
+
+  const porHora = new Map();
+  curva.forEach(r => {
+    const h = num(r.Hora), n = num(r.Llamadas) || 0;
+    if (h == null) return;
+    if (!porHora.has(h)) porHora.set(h, { hora: h, total: 0, agentes: [] });
+    const o = porHora.get(h);
+    o.total += n;
+    o.agentes.push([r.Agente, n]);
+  });
+  const rows = [...porHora.values()].sort((a, b) => a.hora - b.hora);
+
+  const W = 560, H = 220, L = 38, R = 12, T = 14, B = 32;
+  const pw = W - L - R, ph = H - T - B;
+  const max = Math.max(...rows.map(r => r.total));
+  const step = Math.ceil(max / 4 / 5) * 5 || 5;
+  const yMax = Math.ceil(max / step) * step;
+  const bw = Math.min(24, pw / rows.length - 8);
+
+  const plot = document.createElement("div"); plot.className = "plot";
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
+
+  for (let v = 0; v <= yMax; v += step) {
+    const y = T + ph - v / yMax * ph;
+    svg("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }, s);
+    svg("text", { x: L - 8, y: y + 4, "text-anchor": "end", ...AX }, s).textContent = v;
+  }
+
+  rows.forEach((r, i) => {
+    const cx = L + (i + 0.5) * (pw / rows.length);
+    const h = r.total / yMax * ph, y = T + ph - h;
+    const g = svg("g", {}, s);
+    svg("path", { d: rrect(cx - bw / 2, y, bw, h, 4, 4, 0, 0),
+                  fill: r.total === max ? "var(--bar-loud)" : "var(--bar-quiet)" }, g);
+    svg("rect", { x: cx - (pw / rows.length) / 2, y: T, width: pw / rows.length, height: ph, fill: "transparent" }, g);
+    const det = r.agentes.sort((a, b) => b[1] - a[1])
+      .map(([a, n]) => `<div class="t-r">${esc(corto(a))}: <b>${n}</b></div>`).join("");
+    hover(g, `<div class="t-h">${String(r.hora).padStart(2, "0")}:00 – ${String(r.hora + 1).padStart(2, "0")}:00</div>` +
+      `<div class="t-r">Total: <b>${r.total} llamadas</b></div>${det}`);
+    svg("text", { x: cx, y: H - B + 16, "text-anchor": "middle", ...AX }, s)
+      .textContent = String(r.hora).padStart(2, "0");
+    if (r.total === max)
+      svg("text", { x: cx, y: y - 6, "text-anchor": "middle", fill: "var(--ink)",
+                    "font-size": "11", "font-weight": "650" }, s).textContent = r.total;
+  });
+  svg("text", { x: L + pw / 2, y: H - 2, "text-anchor": "middle", ...AX }, s).textContent = "Hora del día";
+
+  c.appendChild(plot);
+  c.appendChild(vistaTabla(["Hora", "Llamadas"],
+    rows.map(r => [`${String(r.hora).padStart(2, "0")}:00`, r.total])));
+  return c;
+}
+
+/* ══ Semáforo ═════════════════════════════════════════════════════ */
+function semaforo(cruce, puntAgente, U) {
+  const c = card("", "Semáforo del equipo",
+    "Una fila por asesor. Las alertas son las que ya calcula el pipeline; los umbrales vienen de horarios.yaml y se muestran junto a cada columna para que no haya que adivinarlos.");
+  if (!cruce.length) { c.appendChild(vacio("Sin asesores evaluados en el periodo.")); return c; }
+
+  const punt = new Map(puntAgente.map(r => [r.Agente, r]));
+  const filas = [...cruce]
+    .sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))
+    .map(r => {
+      const p = punt.get(r.Agente) || {};
+      const pTarde = num(p["% Entradas tarde"]) || 0;
+      const nTarde = num(p["Entradas tarde"]) || 0;
+      const nDias = num(p["Días trabajados"]) || 0;
+      const aux = num(r["% Auxiliar"]) || 0;
+      const sin = num(r["% Sin tipificar"]) || 0;
+      const ef = num(r["% Efectividad total"]) || 0;
+      const alertas = String(r.Alerta || "").split("|").map(s => s.trim()).filter(Boolean);
+      return [
+        esc(corto(r.Agente)),
+        pTarde > U.entradas_tarde_alto ? pill("cr", `${nTarde} de ${nDias}`, "✕") : pill("ok", `${nTarde} de ${nDias}`, "✓"),
+        aux > U.auxiliar_alto ? pill("cr", fmt(aux) + " %", "✕")
+          : (aux > U.auxiliar_alto - 8 ? pill("wa", fmt(aux) + " %", "!") : pill("ok", fmt(aux) + " %", "✓")),
+        sin > U.sin_tipificar_alto ? pill("cr", fmt(sin) + " %", "✕") : pill("ok", fmt(sin) + " %", "✓"),
+        ef < U.efectividad_baja ? pill("cr", fmt(ef) + " %", "✕") : pill("ok", fmt(ef) + " %", "✓"),
+        `<span style="font-variant-numeric:tabular-nums">${fmt(num(r["Gestiones por día"]), 0)}</span>`,
+        alertas.length ? `<div class="alertas">${alertas.map(a => pill("wa", a, "!")).join("")}</div>`
+                       : pill("ok", "Sin alertas", "✓")
+      ];
+    });
+
+  const w = document.createElement("div");
+  w.className = "tw"; w.style.marginTop = "12px";
+  w.innerHTML = `<table><thead><tr>
+      <th>Asesor</th><th>Días tarde<br><span>meta ≤ ${U.entradas_tarde_alto} %</span></th>
+      <th>Fuera de línea<br><span>meta ≤ ${U.auxiliar_alto} %</span></th>
+      <th>Sin registrar<br><span>meta ≤ ${U.sin_tipificar_alto} %</span></th>
+      <th>Efectividad<br><span>meta ≥ ${U.efectividad_baja} %</span></th>
+      <th>Gestiones/día</th><th>Foco de acompañamiento</th>
+    </tr></thead><tbody>${filas.map(f => `<tr>${f.map(v => `<td>${v}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  c.appendChild(w);
+  return c;
+}
+
+/* ══ KPIs ═════════════════════════════════════════════════════════ */
+function kpi({ label, valor, unidad, delta, deltaLabel, meta, mejorEs }) {
+  const d = document.createElement("div");
+  d.className = "kpi";
+  let dHtml = "";
+  if (delta != null && Number.isFinite(delta)) {
+    const mejora = mejorEs === "menor" ? delta < 0 : delta > 0;
+    const plano = Math.abs(delta) < 0.05;
+    const cls = plano ? "flat" : (mejora ? "up" : "down");
+    const flecha = plano ? "→" : (delta > 0 ? "▲" : "▼");
+    dHtml = `<span class="delta ${cls}">${flecha} ${fmt(Math.abs(delta))}${unidad === "%" ? " pts" : ""}</span>`;
+  }
+  d.innerHTML = `<span class="k-label">${esc(label)}</span>` +
+    `<span class="k-value">${valor}${unidad ? `<span class="u">${unidad}</span>` : ""}</span>` +
+    `<span class="k-foot">${dHtml}<span class="k-meta">${esc(deltaLabel || meta || "")}</span></span>`;
+  return d;
+}
+
+/* ══ Render de un periodo ═════════════════════════════════════════ */
+const NOMBRE_TIPO = { dia: "Día", semana: "Semana", mes: "Mes" };
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+               "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+/** "2026-S31" -> "semana 31". La etiqueta del archivo no se le muestra al
+ *  coordinador; en pantalla se nombra el periodo como lo nombra él. */
+function nombreCorto(p) {
+  const e = p.etiqueta || "";
+  if (p.periodo === "semana") return `semana ${e.split("-S")[1].replace(/^0/, "")}`;
+  if (p.periodo === "mes") return `${MESES[parseInt(e.slice(5, 7), 10) - 1]}`;
+  return `${e.slice(8, 10)}/${e.slice(5, 7)}`;
+}
+
+/** El periodo inmediatamente anterior del mismo tipo dentro del almacén. */
+function anterior(p) {
+  const mismos = PERIODOS.filter(x => x.periodo === p.periodo && x.desde < p.desde);
+  return mismos.length ? mismos[0] : null;   // PERIODOS viene del más reciente al más antiguo
+}
+
+function render(p) {
+  const U = p.umbrales, C = p.cuadros, K = p.kpis;
+  const prev = anterior(p);
+  const etiquetaDelta = prev ? `vs. ${nombreCorto(prev)}` : "sin periodo previo";
+  const d = clave => {
+    if (!prev) return null;
+    const a = num(K[clave]), b = num(prev.kpis[clave]);
+    return (a == null || b == null) ? null : a - b;
+  };
+
+  // ── Foco ──
+  $("#foco-t").textContent = p.titulo || p.etiqueta;
+  const cruce = C.cruce || [];
+  const conAlerta = cruce.filter(r => String(r.Alerta || "").trim()).length;
+  if (cruce.length) {
+    const peor = [...cruce].sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))[0];
+    $("#foco-p").textContent =
+      `${conAlerta} de ${cruce.length} asesores traen alerta. El caso más marcado es ${corto(peor.Agente)}: ` +
+      `${fmt(num(peor["% Efectividad total"]))} % de efectividad con ${fmt(num(peor["Ocupación %"]))} % de ocupación. ` +
+      `El problema transversal del periodo es el registro: ${K["% Sin tipificar"] ?? "—"} de las gestiones no quedan tipificadas.`;
+  } else {
+    $("#foco-p").textContent = "Sin gestión registrada en el periodo.";
+  }
+
+  // ── KPIs ──
+  const kw = $("#kpis");
+  kw.innerHTML = "";
+  kw.appendChild(kpi({ label: "Entradas tarde", valor: fmt(num(K["% Entradas tarde (operación)"])), unidad: "%",
+    delta: d("% Entradas tarde (operación)"), deltaLabel: etiquetaDelta, mejorEs: "menor" }));
+  kw.appendChild(kpi({ label: "Aprovechamiento del tiempo conectado", valor: fmt(num(K["Ocupación promedio"])), unidad: "%",
+    delta: d("Ocupación promedio"), deltaLabel: etiquetaDelta, mejorEs: "mayor" }));
+  kw.appendChild(kpi({ label: "Gestiones sin registrar", valor: fmt(num(K["% Sin tipificar"])), unidad: "%",
+    delta: d("% Sin tipificar"), deltaLabel: etiquetaDelta, mejorEs: "menor" }));
+  kw.appendChild(kpi({ label: "Efectividad", valor: fmt(num(K["% Efectividad global (sobre lo tipificado)"])), unidad: "%",
+    delta: d("% Efectividad global (sobre lo tipificado)"), deltaLabel: etiquetaDelta, mejorEs: "mayor" }));
+  kw.appendChild(kpi({ label: "Gestiones totales", valor: int(num(K["Gestiones totales (operación)"])),
+    meta: `${int(num(K["Llamadas"]))} voz · ${int(num(K["Interacciones digitales"]))} digital` }));
+
+  // ── Gráficos ──
+  const g = $("#grid");
+  g.innerHTML = "";
+  if (p.periodo === "dia") {
+    g.appendChild(panelConexion(C.puntualidad_detalle || [], U));
+    g.appendChild(chartCurva(C.curva_horaria || []));
+  } else {
+    g.appendChild(chartCalendario(C.puntualidad_detalle || [], U));
+    g.appendChild(chartCruce(cruce, U));
+  }
+  g.appendChild(chartDistribucion(C.tiempos || []));
+  g.appendChild(chartAuxiliares(C.auxiliares || []));
+  g.appendChild(semaforo(cruce, C.puntualidad_agente || [], U));
+
+  // ── Cabecera y pie ──
+  $("#meta").innerHTML = `Periodo <b>${esc(p.etiqueta)}</b><br>` +
+    `Detalle completo: <a href="analisis_gestion_${esc(p.etiqueta)}.xlsx">analisis_gestion_${esc(p.etiqueta)}.xlsx</a><br>` +
+    `Generado <b>${esc(p.generado || DATA.generado || "")}</b>`;
+  $("#pie").innerHTML =
+    `<p>El Excel sigue siendo la fuente auditable: este tablero solo presenta las mismas cifras. ` +
+    `Si un número difiere entre los dos, manda el Excel y hay un error de presentación que reportar.</p>` +
+    `<p>Corrida: <code>main.py --analisis --periodo ${esc(p.periodo)}</code> · ` +
+    `Tolerancia de horario: ${U.tolerancia_min} min · Periodos en el histórico: ${PERIODOS.length}</p>`;
+  tipOff();
+}
+
+/* ══ Controles ════════════════════════════════════════════════════ */
+const TIPOS = ["dia", "semana", "mes"].filter(t => PERIODOS.some(p => p.periodo === t));
+let tipo = TIPOS[0];
+
+(() => {   // estado inicial desde el hash: #tipo=semana&periodo=2026-S32
+  const q = new URLSearchParams(location.hash.slice(1));
+  const t = q.get("tipo");
+  if (TIPOS.includes(t)) tipo = t;
+})();
+
+function periodoInicial() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  const p = q.get("periodo");
+  const delTipo = PERIODOS.filter(x => x.periodo === tipo);
+  return (p && delTipo.some(x => x.etiqueta === p)) ? p : (delTipo[0] || {}).etiqueta;
+}
+
+function pintar(etiqueta) {
+  $("#seg").innerHTML = TIPOS.map(t =>
+    `<button type="button" data-tipo="${t}" aria-pressed="${t === tipo}">${NOMBRE_TIPO[t]}</button>`).join("");
+  $("#seg").querySelectorAll("[data-tipo]").forEach(b =>
+    b.addEventListener("click", () => { tipo = b.dataset.tipo; pintar(); }));
+
+  const delTipo = PERIODOS.filter(x => x.periodo === tipo);
+  const sel = $("#sel");
+  sel.innerHTML = delTipo.map(x => `<option value="${esc(x.etiqueta)}">${esc(x.titulo || x.etiqueta)}</option>`).join("");
+  const elegido = (etiqueta && delTipo.some(x => x.etiqueta === etiqueta)) ? etiqueta : (delTipo[0] || {}).etiqueta;
+  if (elegido) sel.value = elegido;
+  $("#pick").hidden = delTipo.length < 2;
+
+  const p = delTipo.find(x => x.etiqueta === elegido);
+  if (p) render(p);
+}
+
+$("#sel").addEventListener("change", e => pintar(e.target.value));
+
+if (!PERIODOS.length) {
+  $("#foco-t").textContent = "Sin periodos en el histórico";
+  $("#foco-p").textContent = "Ninguna corrida ha dejado datos todavía. Ejecuta main.py --analisis para generar el primero.";
+} else {
+  pintar(periodoInicial());
+}
+</script>
+</body>
+</html>

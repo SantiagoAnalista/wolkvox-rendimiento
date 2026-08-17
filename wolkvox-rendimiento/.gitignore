@@ -1,6 +1,8 @@
 .env
 src/data/*.csv
 src/output/*.xlsx
+src/output/tablero.html
+src/output/tablero/
 logs/*.log
 __pycache__/
 *.pyc
