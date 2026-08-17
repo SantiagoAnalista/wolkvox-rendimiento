@@ -128,6 +128,10 @@ details.tv summary::before{content:"▸";font-size:10px;color:var(--muted)}
 details.tv[open] summary::before{content:"▾"}
 details.tv summary:hover{color:var(--ink)}
 
+.tv-filtro{display:flex;align-items:center;gap:8px;margin:12px 0 0;flex-wrap:wrap}
+.tv-filtro label{font-size:12px;color:var(--muted);text-transform:uppercase;
+                 letter-spacing:.07em;font-weight:600}
+.tv-filtro select{padding:6px 9px;font-size:12.5px}
 .tw{overflow-x:auto;margin-top:10px}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--hair-2);white-space:nowrap}
@@ -230,7 +234,6 @@ const num = v => {
 const fmt = (v, d = 1) => v == null ? "—"
   : v.toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
 const int = v => v == null ? "—" : Math.round(v).toLocaleString("es-CO");
-const dur = h => h < 1 ? `${Math.round(h * 60)} min` : `${fmt(h)} h`;
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -588,33 +591,111 @@ function chartCruce(cruce, U) {
 }
 
 /* ══ Auxiliares por tipo ══════════════════════════════════════════ */
-function chartAuxiliares(aux) {
+/** '3h 43m', el mismo formato que usa el Excel (gestion._horas_min). */
+const hm = h => {
+  const m = Math.round(h * 60);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+};
+
+/** Horas por estado auxiliar; con `agente`, solo las suyas.
+ *
+ *  Cuando un estado viene de una sola fila del dato (que es el caso al
+ *  filtrar por asesor) se muestra su `Duración` textual en vez de recalcular
+ *  desde `Horas`: ese campo está redondeado a dos decimales y derivar los
+ *  minutos de ahí desviaba hasta un minuto respecto del Excel. Si el tablero
+ *  no cuadra con la maestra al minuto, deja de ser la misma verdad. */
+function horasPorEstado(aux, agente = null) {
+  const acc = new Map();
+  aux.filter(r => !agente || r.Agente === agente).forEach(r => {
+    const k = r["Estado auxiliar"];
+    const o = acc.get(k) || { estado: k, horas: 0, filas: 0, duracion: null };
+    o.horas += num(r.Horas) || 0;
+    o.duracion = r["Duración"];
+    o.filas += 1;
+    acc.set(k, o);
+  });
+  return [...acc.values()]
+    // Bajo un minuto no es un motivo de pausa, es ruido de registro.
+    .filter(o => o.horas >= 1 / 60)
+    .map(o => ({ ...o, texto: (o.filas === 1 && o.duracion) ? o.duracion : hm(o.horas) }))
+    .sort((a, b) => b.horas - a.horas);
+}
+
+/** El detalle se abre por asesor: la pregunta del coordinador no es
+ *  "cuánto baño hubo" sino "cuánto baño lleva Laura esta semana". El
+ *  periodo lo gobierna el selector de arriba, así que la misma tabla
+ *  responde por día o por semana sin tocar nada más. */
+function tablaAuxiliares(aux, nomina) {
+  const d = document.createElement("details");
+  d.className = "tv";
+  d.innerHTML = `<summary>Ver los datos en tabla, por asesor</summary>`;
+
+  const conPausas = [...new Set(aux.map(r => r.Agente))];
+  // La nómina completa, no solo quien registró pausas: que un asesor no
+  // aparezca porque no registró ninguna se lee como un error del tablero.
+  const agentes = [...new Set([...conPausas, ...nomina.map(r => r.Agente)])]
+    .sort((a, b) => corto(a).localeCompare(corto(b)));
+
+  const barra = document.createElement("div");
+  barra.className = "tv-filtro";
+  const id = "aux-" + Math.random().toString(36).slice(2, 8);
+  barra.innerHTML = `<label for="${id}">Asesor</label><select id="${id}">` +
+    `<option value="">Todo el equipo</option>` +
+    agentes.map(a => `<option value="${esc(a)}">${esc(corto(a))}</option>`).join("") +
+    `</select>`;
+
+  const cont = document.createElement("div");
+
+  function pintar(agente) {
+    const filas = horasPorEstado(aux, agente || null);
+    if (!filas.length) {
+      cont.innerHTML = `<div class="empty">${agente
+        ? esc(corto(agente)) + " no registró auxiliares en el periodo."
+        : "Sin auxiliares registrados en el periodo."}</div>`;
+      return;
+    }
+    const total = filas.reduce((a, o) => a + o.horas, 0);
+    cont.innerHTML = `<div class="tw"><table><thead><tr>` +
+      `<th>Estado auxiliar</th><th>Tiempo</th><th>Participación</th>` +
+      `</tr></thead><tbody>` +
+      filas.map(o =>
+        `<tr><td>${esc(o.estado)}</td><td>${esc(o.texto)}</td>` +
+        `<td>${fmt(total ? o.horas / total * 100 : 0)} %</td></tr>`).join("") +
+      `<tr><td><b>Total fuera de línea</b></td><td><b>${hm(total)}</b></td><td></td></tr>` +
+      `</tbody></table></div>`;
+  }
+
+  barra.querySelector("select").addEventListener("change", e => pintar(e.target.value));
+  pintar("");
+  d.append(barra, cont);
+  return d;
+}
+
+function chartAuxiliares(aux, nomina = []) {
   const c = card("half", "Tiempo fuera de línea, por motivo",
-    "Suma del equipo en el periodo, ordenada por duración: lo primero de la lista es donde hay algo que revisar.");
-  const tot = new Map();
-  aux.forEach(r => tot.set(r["Estado auxiliar"], (tot.get(r["Estado auxiliar"]) || 0) + (num(r.Horas) || 0)));
-  // Bajo un minuto no es un motivo de pausa, es ruido de registro.
-  const rows = [...tot.entries()].filter(([, v]) => v >= 1 / 60).sort((a, b) => b[1] - a[1]);
+    "Suma del equipo en el periodo, ordenada por duración: lo primero de la lista es donde hay algo que revisar. El detalle se abre por asesor.");
+  const rows = horasPorEstado(aux);
   if (!rows.length) { c.appendChild(vacio("Sin auxiliares registrados en el periodo.")); return c; }
 
   const PAD_L = 132, PAD_R = 54, BH = 18, GAP_ROW = 12, TOP = 4, W = 560;
-  const H = TOP + rows.length * (BH + GAP_ROW), max = rows[0][1] || 1;
+  const H = TOP + rows.length * (BH + GAP_ROW), max = rows[0].horas || 1;
   const plot = document.createElement("div"); plot.className = "plot";
   const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
 
-  rows.forEach(([k, v], i) => {
+  rows.forEach((o, i) => {
     const y = TOP + i * (BH + GAP_ROW);
     svg("text", { x: PAD_L - 10, y: y + BH / 2 + 4, "text-anchor": "end", fill: "var(--ink)", "font-size": "12" }, s)
-      .textContent = k;
-    const w = Math.max(2, (W - PAD_L - PAD_R) * v / max);
+      .textContent = o.estado;
+    const w = Math.max(2, (W - PAD_L - PAD_R) * o.horas / max);
     const p = svg("path", { d: rrect(PAD_L, y, w, BH, 0, 4, 4, 0), fill: "var(--s1)" }, s);
-    hover(p, `<div class="t-h">${esc(k)}</div><div class="t-r">Total del equipo: <b>${dur(v)}</b></div>`);
+    hover(p, `<div class="t-h">${esc(o.estado)}</div>` +
+             `<div class="t-r">Total del equipo: <b>${esc(o.texto)}</b></div>`);
     svg("text", { x: PAD_L + w + 8, y: y + BH / 2 + 4, fill: "var(--ink-2)",
-                  "font-size": "11.5", "font-weight": "600" }, s).textContent = dur(v);
+                  "font-size": "11.5", "font-weight": "600" }, s).textContent = o.texto;
   });
 
   c.appendChild(plot);
-  c.appendChild(vistaTabla(["Estado auxiliar", "Tiempo del equipo"], rows.map(([k, v]) => [esc(k), dur(v)])));
+  c.appendChild(tablaAuxiliares(aux, nomina));
   return c;
 }
 
@@ -839,7 +920,7 @@ function render(p) {
     g.appendChild(chartCruce(cruce, U));
   }
   g.appendChild(chartDistribucion(C.tiempos || []));
-  g.appendChild(chartAuxiliares(C.auxiliares || []));
+  g.appendChild(chartAuxiliares(C.auxiliares || [], C.puntualidad_agente || []));
   g.appendChild(semaforo(cruce, C.puntualidad_agente || [], U));
 
   // ── Cabecera y pie ──
