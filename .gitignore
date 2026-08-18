@@ -1,9 +1,26 @@
-# --- Entornos virtuales ---
+# Reglas transversales a TODO el repositorio.
+#
+# Lo específico de un proyecto va en el .gitignore de ese proyecto: una regla
+# vive donde viven las rutas que nombra. `src/data/*.csv` no significa nada
+# aquí arriba, y escribirlo como `wolkvox-rendimiento/src/data/*.csv` ataría
+# la raíz a la estructura interna del proyecto.
+#
+# Tampoco se prohíben extensiones en bloque (`*.xlsx`, `*.csv`). Un veto así
+# parece una regla de datos y en realidad es un veto a un tipo de archivo:
+# esconde de paso los cronogramas que la operación necesita y cualquier
+# fixture de pruebas que se agregue mañana. Las rutas concretas van abajo,
+# en cada proyecto.
+
+# --- Secretos ---
+# Duplicado a propósito en cada proyecto: un .env filtrado cuesta mucho más
+# que una regla repetida.
+.env
+.env.local
+
+# --- Entornos virtuales y cachés de Python (indeseables en cualquier carpeta) ---
 .venv/
 venv/
 env/
-
-# --- Python ---
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -11,19 +28,6 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
-
-# --- Secretos / configuración local ---
-.env
-.env.local
-
-# --- Datos y reportes (nunca se versionan) ---
-*.xlsx
-*.xls
-*.csv
-
-# --- Logs ---
-logs/*.log
-*.log
 
 # --- Herramientas locales ---
 .claude/settings.local.json
@@ -35,6 +39,3 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
-
-# --- Temporales de Office ---
-~$*

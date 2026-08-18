@@ -441,8 +441,10 @@ python -m pip install -r requirements-dev.txt   # requirements + pytest
 python -m pytest -q
 ```
 
-No consumen API ni necesitan datos en `src/data`: se pueden correr en
-cualquier equipo recién clonado.
+No consumen API y se pueden correr en cualquier equipo recién clonado. En un
+clon sin `src/data` dan **172 passed, 4 skipped**: las cuatro que leen los
+cronogramas reales se saltan solas en vez de fallar. Con los Excel copiados
+son 176.
 
 Cubren el parseo de tiempos, la puntualidad contra el cronograma, la
 efectividad por canal, la rotación del backup, la retención de maestras, el

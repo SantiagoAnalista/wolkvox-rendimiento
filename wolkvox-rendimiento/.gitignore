@@ -1,10 +1,29 @@
+# Lo propio de este proyecto, con rutas concretas.
+# Las reglas transversales (cachés de Python, entornos virtuales, basura del
+# sistema operativo) están en el .gitignore de la raíz del repositorio.
+
+# --- Configuración local ---
+# También está en la raíz. La duplicación aquí es deliberada.
 .env
+
+# --- Datos de entrada y respaldos ---
+# Los respaldos son regenerables y traen teléfonos de clientes y documentos:
+# no se suben nunca.
 src/data/*.csv
-src/output/*.xlsx
-src/output/tablero.html
-src/output/tablero/
+
+# Los cronogramas son ENTRADA de la operación, no salida: sin ellos el
+# pipeline falla. Hoy no se versionan, así que hay que copiarlos a mano en
+# cada equipo y cuatro pruebas de horarios se saltan solas (172 passed,
+# 4 skipped en vez de 176). Ver la sección de arranque del README.
+src/data/*.xlsx
+
+# --- Salidas generadas ---
+# Excel, tablero y su almacén JSON: todo se rehace en cada corrida.
+src/output/
+
+# --- Registros ---
 logs/*.log
-__pycache__/
-*.pyc
-.venv/
-.pytest_cache/
+
+# --- Temporales de Office ---
+# Excel deja ~$archivo.xlsx mientras alguien lo tiene abierto.
+~$*
