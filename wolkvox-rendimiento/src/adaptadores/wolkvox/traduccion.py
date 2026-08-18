@@ -2,16 +2,11 @@
 categoría de negocio. No sabe nada de HTTP ni de Excel.
 
 Los campos crudos de Wolkvox se conservan siempre; las columnas derivadas
-(`*_seg`, `ocupacion`, `categoria_negocio`) se agregan al lado.
+(`*_seg`, `ocupacion`, `fecha`, `hora`) se agregan al lado.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
-import yaml
-
-from config.paths import ROOT_DIR
 
 
 # Campos que Wolkvox entrega como texto de tiempo y pasamos a segundos.
@@ -98,21 +93,6 @@ def _fecha_y_hora(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def cargar_categorias(ruta: Path | None = None) -> dict:
-    with open(ruta or (ROOT_DIR / "categorias.yaml"), "r", encoding="utf-8") as f:
-        crudo = yaml.safe_load(f) or {}
-    return {
-        "conectadas": {str(k).strip().upper(): v for k, v in (crudo.get("conectadas") or {}).items()},
-        "no_conectadas": {str(k).strip().lower(): v for k, v in (crudo.get("no_conectadas") or {}).items()},
-    }
-
-
-def agentes(registros: list[dict]) -> pd.DataFrame:
-    """information.php?api=agents — catálogo de agentes."""
-    cols = ["agent_id", "agent_name", "agent_dni", "agent_status", "last_use", "agent_sso"]
-    return _df(registros, cols)[cols]
-
-
 def agente_dia(registros: list[dict], fecha: str) -> pd.DataFrame:
     """agent_1 — resumen por agente. El endpoint no devuelve fecha: la
     asignamos según la ventana consultada."""
@@ -126,21 +106,13 @@ def agente_dia(registros: list[dict], fecha: str) -> pd.DataFrame:
     return df
 
 
-def agente_hora(registros: list[dict], fecha: str) -> pd.DataFrame:
-    """agent_8 — mismos indicadores, desglosados hora a hora."""
-    cols = ["agent_id", "agent_name", "agent_dni", "date", "hour", *CONTEOS, *TIEMPOS, "occupancy"]
-    df = _enteros(_segundos(_df(registros, cols)))
-    if df.empty:
-        return df
-    df["fecha"] = df["date"].replace("", pd.NA).fillna(fecha)
-    df["hora"] = pd.to_numeric(df["hour"], errors="coerce").fillna(0).astype(int)
-    df["ocupacion"] = _ocupacion(df)
-    return df
+def llamadas(registros: list[dict]) -> pd.DataFrame:
+    """cdr_1 — llamadas conectadas, con la fecha partida en fecha y hora.
 
-
-def llamadas(registros: list[dict], categorias: dict) -> pd.DataFrame:
-    """cdr_1 — llamadas conectadas. La categoría de negocio sale del código
-    de tipificación que el agente le asigna a la llamada."""
+    La efectividad no se decide aquí: sale de las banderas hit/rpc que la
+    propia operación ya configuró en Wolkvox (`codigos_tipificacion`), no de
+    un mapeo mantenido a mano.
+    """
     cols = ["conn_id", "date", "agent_id", "agent_name", "campaign_id", "skill_id", "skill_name",
             "type_interaction", "destiny", "telephone", "customer_id", "time_seg", "cost",
             "cod_act", "description_cod_act", "cod_act_2", "description_cod_act_2",
@@ -150,10 +122,6 @@ def llamadas(registros: list[dict], categorias: dict) -> pd.DataFrame:
         return df
     df = _fecha_y_hora(df)
     df["time_seg"] = pd.to_numeric(df["time_seg"], errors="coerce").fillna(0).astype(int)
-    df["categoria_negocio"] = (
-        df["cod_act"].astype(str).str.strip().str.upper()
-        .map(categorias.get("conectadas", {})).fillna("sin_clasificar")
-    )
     return df
 
 
@@ -228,17 +196,3 @@ def chats_detalle(registros: list[dict]) -> pd.DataFrame:
     return df
 
 
-def llamadas_no_conectadas(registros: list[dict], categorias: dict) -> pd.DataFrame:
-    """cdr_5 — intentos que no conectaron. La categoría sale del resultado
-    técnico que reporta la red."""
-    cols = ["conn_id", "date", "agent_id", "agent_name", "campaign_id", "type_interaction",
-            "destiny", "telephone", "customer_id", "ring_time", "result"]
-    df = _df(registros, cols)
-    if df.empty:
-        return df
-    df = _segundos(_fecha_y_hora(df))
-    df["categoria_negocio"] = (
-        df["result"].astype(str).str.strip().str.lower()
-        .map(categorias.get("no_conectadas", {})).fillna("sin_clasificar")
-    )
-    return df

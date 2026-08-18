@@ -1,13 +1,14 @@
 # wolkvox-rendimiento
 
 Extrae indicadores de rendimiento de call center desde la API v2 de Wolkvox y
-los entrega como un Excel con resumen y gráficos.
+los entrega en dos capas: un **Excel** auditable con el detalle (la maestra) y
+un **tablero HTML** para coordinación, ambos calculados de la misma fuente.
 
 El flujo es lineal y sin base de datos:
 
 ```
-extraer  ->  transformar  ->  exportar
-(API v2)     (DataFrames)     (Excel + backup CSV de 3 días)
+extraer  ->  transformar  ->  calcular  ->  publicar
+(API v2)     (DataFrames)     (dominio)     (Excel + tablero + backup CSV)
 ```
 
 Los nombres de campo de la API se tomaron de la colección oficial de Postman
@@ -25,7 +26,6 @@ main.py          traduce la línea de comandos. Nada más.
    v
 src/aplicacion   casos de uso: qué se pide, en qué orden, a dónde va
    |                analisis.py   informe de gestión (diario, semanal, mensual, intradía)
-   |                operativo.py  reporte operativo del día
    |
    +--> src/dominio       las reglas. Cero IO: pandas y nada más
    |       asistencia.py  puntualidad contra el horario pactado
@@ -35,7 +35,7 @@ src/aplicacion   casos de uso: qué se pide, en qué orden, a dónde va
    +--> src/adaptadores   todo lo que sale del proceso
            wolkvox/       cliente HTTP, extracción por endpoint, traducción a DataFrames
            almacen/       horarios (YAML + Excel), respaldo CSV, candado de corridas
-           publicacion/   Excel operativo, Excel de análisis, retención, tablero HTML
+           publicacion/   Excel de análisis (la maestra), retención, tablero HTML
 ```
 
 El dominio recibe el horario ya resuelto como un `dict` y no sabe que salió de
@@ -53,7 +53,6 @@ barato.
 ```
 wolkvox-rendimiento/
 ├── main.py                        # CLI: traduce argumentos a un caso de uso
-├── categorias.yaml                # mapeo de categoría de negocio (editable sin tocar código)
 ├── horarios.yaml                  # horarios, tolerancia, festivos y umbrales de alerta
 ├── config/
 │   ├── paths.py                   # ROOT_DIR — raíz del proyecto, referencia única
@@ -65,19 +64,17 @@ wolkvox-rendimiento/
 │   │   ├── gestion.py             # tiempos por estado, efectividad, alertas y curva horaria
 │   │   └── nombres.py             # identidad del asesor y días de la semana
 │   ├── aplicacion/                # casos de uso
-│   │   ├── analisis.py            # informe de gestión (diario, semanal, mensual, intradía)
-│   │   └── operativo.py           # reporte operativo del día
+│   │   └── analisis.py            # informe de gestión (diario, semanal, mensual, intradía)
 │   ├── adaptadores/
 │   │   ├── wolkvox/
 │   │   │   ├── cliente.py         # cliente HTTP (auth, reintentos)
 │   │   │   ├── extraccion.py      # un método por endpoint + partición de ventanas
-│   │   │   └── traduccion.py      # registros crudos -> DataFrames, categorización
+│   │   │   └── traduccion.py      # registros crudos -> DataFrames
 │   │   ├── almacen/
 │   │   │   ├── horarios.py        # horarios.yaml + los Excel de cronograma
 │   │   │   ├── respaldo.py        # CSV de lo extraído, últimos 3 días
 │   │   │   └── candado.py         # impide dos corridas simultáneas sobre el token
 │   │   └── publicacion/
-│   │       ├── excel_operativo.py # Excel del reporte diario
 │   │       ├── excel_analisis.py  # Excel del informe de gestión (la maestra)
 │   │       ├── retencion.py       # consolida cortes del día y purga por antigüedad
 │   │       ├── tablero_datos.py   # almacén JSON por periodo
@@ -99,16 +96,13 @@ importa desde ahí en vez de recalcular rutas relativas por su cuenta.
    servidor, ej. `3211`) y `WOLKVOX_TOKEN` (wolkvox Manager → Configuración →
    Integraciones → Tokens).
 2. `pip install -r requirements.txt`
-3. `python main.py`
+3. Copiar los cronogramas de la operación a `src/data/` (los `.xlsx` no se
+   versionan: el `.gitignore` de la raíz excluye `*.xlsx` y `*.csv`).
+4. `python main.py --analisis --periodo semana`
 
 ## Uso
 
 ```bash
-# Reporte diario de operación
-python main.py                  # procesa el día de hoy hasta la hora actual
-python main.py --dias-atras 1   # reprocesa el día de ayer completo
-python main.py --sin-excel      # extrae y respalda, sin generar el Excel
-
 # Informe de gestión — tres modos. Sin fechas toma el último periodo CERRADO
 python main.py --analisis --periodo mes       # el mes pasado completo
 python main.py --analisis --periodo semana    # la semana pasada (lunes a domingo)
@@ -153,53 +147,23 @@ nada que consultar entre corridas. El backup en CSV cubre lo único que sí hace
 falta —poder auditar una cifra o rehacer un Excel sin volver a pegarle a la
 API— y se puede abrir en Excel o cargar con `pd.read_csv` sin herramientas
 extra. Si más adelante se necesita histórico largo o consultas cruzadas, el
-punto de cambio es `src/services/backup.py`, sin tocar el resto.
+punto de cambio es `src/adaptadores/almacen/respaldo.py`, sin tocar el resto.
 
 ## Endpoints usados
 
 | Endpoint | Uso |
 |---|---|
-| `information.php?api=agents` | Catálogo de agentes |
 | `reports_manager.php?api=agent_1` | Resumen de tiempos por agente en la ventana |
-| `reports_manager.php?api=agent_8` | Tiempos por agente, hora a hora |
+| `reports_manager.php?api=agent_3` | Tiempo auxiliar desglosado por tipo de pausa |
+| `reports_manager.php?api=agent_7` | Login/logout por agente y día (base de la puntualidad) |
 | `reports_manager.php?api=cdr_1` | Detalle de llamadas conectadas/tipificadas |
-| `reports_manager.php?api=cdr_5` | Detalle de intentos **no** conectados |
+| `reports_manager.php?api=chat_1` | Detalle de conversaciones (WhatsApp/chat) |
+| `reports_manager.php?api=chat_16` | Productividad digital por agente |
+| `information.php?api=activity_codes` | Inventario de códigos con sus banderas hit/rpc |
 
-Se usa `cdr_5` y no `cdr_6` para "no conectadas": `cdr_6` solo devuelve un
-conteo agregado por resultado (`{result, count}`), sin fecha ni hora por
-registro, lo que impide construir la curva horaria. `cdr_5` sí trae `date` y
-`conn_id` por intento.
+La efectividad sale de `activity_codes`, no de un mapeo mantenido a mano: son
+las banderas que la propia operación ya configuró en Wolkvox.
 
-## Categorización de negocio
-
-Wolkvox no entrega un único campo "efectiva / colgada / no contactada". Se
-deriva de dos fuentes independientes, configurables en `categorias.yaml`:
-
-- **Conectadas** (`cdr_1`): por el código de tipificación que el agente le da
-  a la llamada (`cod_act`).
-- **No conectadas** (`cdr_5`): por el resultado técnico que reporta la red
-  (`result`: `Cancel`, `Chanunavail`, `Congestion`, `Busy`, `No answer`,
-  `Tcpa`, `Do not call` — valores fijos documentados por Wolkvox).
-
-Los campos crudos se conservan siempre; `categoria_negocio` se agrega al lado,
-nunca reemplaza al dato original. Lo que no esté mapeado cae en
-`sin_clasificar`, visible en el reporte en vez de perderse.
-
-## Hojas del Excel
-
-| Hoja | Contenido |
-|---|---|
-| `Resumen` | KPIs del día (llamadas, AHT, ocupación, hits, RPC) |
-| `Resultados` | Distribución por categoría + gráfico de torta |
-| `Por agente` | Tabla por asesor + gráfico de barras |
-| `Por hora` | Curva horaria de llamadas + gráfico de líneas |
-| `Metadatos` | Ventana extraída, fecha de corrida, registros por fuente |
-
-Los tiempos se muestran como `HH:MM:SS` porque el Excel lo lee una persona;
-los segundos crudos quedan en el backup CSV para cuando haya que calcular.
-
-La hoja `Metadatos` no es decorativa: cuando alguien cuestione una cifra dentro
-de tres semanas, dice exactamente qué ventana se extrajo y cuándo.
 
 ## Informe de análisis de gestión
 
@@ -464,16 +428,11 @@ bloque sube el consumo pero sigue siendo marginal: `=3` → 259/día, `=2` →
 
 ## ⚠️ Pendientes antes de publicar el primer reporte
 
-1. **Códigos de tipificación reales.** `categorias.yaml` trae códigos de
-   ejemplo (`VENTA`, `NO_INTERES`…). Reemplazarlos por el inventario real de
-   "Códigos de actividad" de la operación (Manager → Configuración → Códigos
-   de actividad, o vía la API `act_1`). Mientras tanto las llamadas caen en
-   `sin_clasificar`, visible en el reporte.
+1. **Festivos.** `horarios.yaml` trae `festivos: []`. Sin cargarlos, cada
+   festivo deja las ocho corridas intradía en rojo.
 2. **Totales contra el Manager.** Comparar los totales del Excel contra un
    reporte generado manualmente, para al menos 3 días distintos.
 
-Pendiente de infraestructura: la programación horaria (Task Scheduler o
-Jenkins) se agrega cuando el pipeline esté validado con datos reales.
 
 ## Pruebas
 
@@ -485,6 +444,7 @@ python -m pytest -q
 No consumen API ni necesitan datos en `src/data`: se pueden correr en
 cualquier equipo recién clonado.
 
-Cubren el parseo de tiempos, la ocupación, la categorización, la rotación del
-backup y la generación del Excel de punta a punta (incluido el caso de un día
-sin datos).
+Cubren el parseo de tiempos, la puntualidad contra el cronograma, la
+efectividad por canal, la rotación del backup, la retención de maestras, el
+candado de corridas, la generación del tablero y la regla de dependencia de
+la arquitectura.

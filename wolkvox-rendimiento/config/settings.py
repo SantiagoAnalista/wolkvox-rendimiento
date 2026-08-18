@@ -16,7 +16,6 @@ class Config:
     token: str
     timeout_seg: int
     reintentos: int
-    bloque_horas: int
     ruta_backup: Path
     dias_backup: int
     ruta_salida: Path
@@ -52,7 +51,6 @@ def cargar_config() -> Config:
         token=token,
         timeout_seg=int(os.getenv("WOLKVOX_TIMEOUT_SEG", "90")),
         reintentos=int(os.getenv("WOLKVOX_REINTENTOS", "3")),
-        bloque_horas=int(os.getenv("BLOQUE_HORAS", "6")),
         ruta_backup=ruta_backup,
         dias_backup=int(os.getenv("DIAS_BACKUP", "3")),
         ruta_salida=ruta_salida,

@@ -37,7 +37,8 @@ def _extraer_particionado(client: WolkvoxClient, recurso: str, api: str,
         if len(lote) >= MARGEN_SEGURIDAD:
             raise RuntimeError(
                 f"{api} devolvió {len(lote)} registros entre {cursor} y {corte} "
-                f"(límite de la API: {LIMITE_REGISTROS_API}). Reducir BLOQUE_HORAS en .env."
+                f"(límite de la API: {LIMITE_REGISTROS_API}). Reducir BLOQUE_HORAS_ANALISIS "
+                f"en src/aplicacion/analisis.py."
             )
 
         registros.extend(lote)
@@ -45,36 +46,15 @@ def _extraer_particionado(client: WolkvoxClient, recurso: str, api: str,
     return registros
 
 
-def agentes_catalogo(client: WolkvoxClient) -> list[dict]:
-    """information.php?api=agents — catálogo de agentes."""
-    return client.consultar("information.php", {"api": "agents"})
-
-
 def agente_dia(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> list[dict]:
     """reports_manager.php?api=agent_1 — resumen de tiempos por agente en la ventana."""
     return client.consultar("reports_manager.php", {"api": "agent_1", **_rango(dt_ini, dt_fin)})
-
-
-def agente_hora(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> list[dict]:
-    """reports_manager.php?api=agent_8 — tiempos por agente, hora a hora."""
-    return client.consultar("reports_manager.php", {"api": "agent_8", **_rango(dt_ini, dt_fin)})
 
 
 def llamadas_detalle(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime,
                       bloque_horas: int = 6) -> list[dict]:
     """reports_manager.php?api=cdr_1 — detalle de llamadas conectadas/tipificadas."""
     return _extraer_particionado(client, "reports_manager.php", "cdr_1", dt_ini, dt_fin, bloque_horas)
-
-
-def llamadas_no_conectadas(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime,
-                            bloque_horas: int = 6) -> list[dict]:
-    """reports_manager.php?api=cdr_5 — detalle de intentos no conectados.
-
-    Se usa cdr_5 (detalle) en vez de cdr_6 (conteo agregado por resultado)
-    porque cdr_6 no trae fecha/hora por registro y no permite construir la
-    curva horaria que pide el reporte. cdr_5 sí trae 'date' y 'conn_id'.
-    """
-    return _extraer_particionado(client, "reports_manager.php", "cdr_5", dt_ini, dt_fin, bloque_horas)
 
 
 # ---------------------------------------------------------------------------

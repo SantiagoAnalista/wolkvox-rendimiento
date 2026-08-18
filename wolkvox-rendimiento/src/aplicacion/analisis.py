@@ -28,6 +28,11 @@ from src.dominio import asistencia, gestion
 
 log = logging.getLogger(__name__)
 
+# cdr_1 se pide de una sola vez por periodo: mes, semana y día caben de sobra
+# en el límite de 31 días por consulta. Si alguna vez el volumen supera el
+# tope de registros de la API, este es el número que hay que bajar.
+BLOQUE_HORAS_ANALISIS = 24 * 31
+
 
 def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes",
                      corte: datetime | None = None) -> dict[str, pd.DataFrame]:
@@ -55,8 +60,8 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
                 "auxiliar": (lambda: extraccion.tiempo_auxiliar(api, ini, fin), traduccion.tiempo_auxiliar),
                 "auxiliar_dia": (lambda: extraccion.tiempo_auxiliar_por_dia(api, ini, fin),
                                  traduccion.tiempo_auxiliar),
-                "llamadas": (lambda: extraccion.llamadas_detalle(api, ini, fin, 24 * 31),
-                             lambda r: traduccion.llamadas(r, {"conectadas": {}, "no_conectadas": {}})),
+                "llamadas": (lambda: extraccion.llamadas_detalle(api, ini, fin, BLOQUE_HORAS_ANALISIS),
+                             traduccion.llamadas),
                 "chats_prod": (lambda: extraccion.chats_productividad(api, ini, fin),
                                traduccion.chats_productividad),
                 "chats": (lambda: extraccion.chats_detalle(api, ini, fin), traduccion.chats_detalle),

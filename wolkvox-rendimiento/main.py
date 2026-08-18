@@ -4,11 +4,6 @@ Aquí no hay reglas de negocio ni orquestación. Las cifras las calcula
 `src/dominio`, el flujo lo arma `src/aplicacion` y todo lo que toca red,
 disco o Excel vive en `src/adaptadores`.
 
-Reporte operativo del día:
-    python main.py                  # procesa el día de hoy hasta la hora actual
-    python main.py --dias-atras 1   # reprocesa el día de ayer completo
-    python main.py --sin-excel      # solo extrae y respalda, no genera Excel
-
 Informe de gestión (puntualidad, tiempos, efectividad):
     python main.py --analisis --periodo semana
     python main.py --analisis --periodo dia --hoy
@@ -26,7 +21,6 @@ from config.settings import cargar_config
 from src.adaptadores.almacen import candado
 from src.adaptadores.wolkvox import extraccion
 from src.aplicacion.analisis import analizar
-from src.aplicacion.operativo import ejecutar
 
 log = logging.getLogger("main")
 
@@ -36,7 +30,6 @@ def _construir_parser() -> argparse.ArgumentParser:
         description="Automatización de reportes de Wolkvox.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Ejemplos:
-  main.py                                        reporte operativo de hoy
   main.py --analisis --periodo mes               el mes pasado completo
   main.py --analisis --periodo semana            la semana pasada (lun-dom)
   main.py --analisis --periodo dia               ayer
@@ -56,10 +49,6 @@ def _construir_parser() -> argparse.ArgumentParser:
                              "Es el modo de las corridas intradía")
     parser.add_argument("--desde-backup", action="store_true",
                         help="regenera el Excel desde el backup CSV, sin consumir API")
-    parser.add_argument("--dias-atras", type=int, default=0,
-                        help="reporte operativo: 0 = hoy, 1 = ayer, etc.")
-    parser.add_argument("--sin-excel", action="store_true",
-                        help="reporte operativo: extrae y respalda, sin generar el Excel")
     return parser
 
 
@@ -94,7 +83,10 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.analisis:
-        return ejecutar(args.dias_atras, args.sin_excel)
+        # Sin modo explícito no se asume ninguno: con un cron de por medio,
+        # ejecutar algo distinto de lo que se cree es peor que no ejecutar.
+        parser.print_help()
+        parser.exit(2, "\nFalta indicar qué generar. Use --analisis.\n")
 
     desde, hasta, corte = _ventana(args, parser)
     if desde > hasta:

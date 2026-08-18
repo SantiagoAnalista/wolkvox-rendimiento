@@ -7,11 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.adaptadores.wolkvox import traduccion as transform
 
-CATEGORIAS = {
-    "conectadas": {"VENTA": "efectiva"},
-    "no_conectadas": {"busy": "no_contactada"},
-}
-
 
 def test_hhmmss_a_segundos_formatos_validos():
     assert transform.hhmmss_a_segundos("01:02:03") == 3723
@@ -67,28 +62,13 @@ def test_columna_ausente_no_rompe():
     assert df.loc[0, "hits"] == 0
 
 
-def test_llamadas_categoriza_por_cod_act_y_parte_la_fecha():
-    registros = [{"conn_id": "abc", "cod_act": "venta", "date": "2026-08-11 08:15:00"}]
-    df = transform.llamadas(registros, CATEGORIAS)
-    assert df.loc[0, "categoria_negocio"] == "efectiva"
-    assert df.loc[0, "fecha"] == "2026-08-11"
-    assert df.loc[0, "hora"] == 8
 
 
-def test_llamadas_sin_mapeo_cae_en_sin_clasificar():
-    df = transform.llamadas([{"conn_id": "abc", "cod_act": "DESCONOCIDO"}], CATEGORIAS)
-    assert df.loc[0, "categoria_negocio"] == "sin_clasificar"
-
-
-def test_no_conectadas_categoriza_por_result():
-    registros = [{"conn_id": "xyz", "result": "Busy", "date": "2026-08-11 09:00:00",
-                  "ring_time": "00:00:20"}]
-    df = transform.llamadas_no_conectadas(registros, CATEGORIAS)
-    assert df.loc[0, "categoria_negocio"] == "no_contactada"
-    assert df.loc[0, "ring_time_seg"] == 20
-
-
-def test_cargar_categorias_normaliza_mayusculas():
-    cats = transform.cargar_categorias()
-    assert all(k == k.upper() for k in cats["conectadas"])
-    assert all(k == k.lower() for k in cats["no_conectadas"])
+def test_llamadas_parte_la_fecha_en_fecha_y_hora():
+    """La curva horaria del tablero se construye sobre estas dos columnas."""
+    registros = [{"conn_id": "1", "date": "2026-08-12 15:04:22", "agent_name": "Ana",
+                  "cod_act": "Acuerdo_de_Pago", "time_seg": "201"}]
+    df = transform.llamadas(registros)
+    assert df.loc[0, "fecha"] == "2026-08-12"
+    assert df.loc[0, "hora"] == 15
+    assert df.loc[0, "time_seg"] == 201
