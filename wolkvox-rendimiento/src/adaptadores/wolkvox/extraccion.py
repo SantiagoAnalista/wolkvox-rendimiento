@@ -30,6 +30,17 @@ def es_sin_datos(error: Exception) -> bool:
     de ERROR por algo que no pasó, y un log que grita cuando no hay problema
     enseña a ignorarlo.
 
+    **El mensaje del 404 es engañoso: dice "Validate dates entered".** Parece
+    un problema con el rango y no lo es. Comprobado contra la API real:
+
+        agent_3  12/08 00:00-12:00  (parcial, día con datos)  -> 200, 6 registros
+        agent_3  12/08 completo                               -> 200, 15 registros
+        agent_3  16/08 completo     (domingo, sin actividad)  -> 404
+        chat_1   12/08 00:00-12:00                            -> 200, 519 registros
+
+    O sea: las ventanas parciales se aceptan sin problema, y lo que dispara
+    el 404 es que no haya nada que devolver. No hay que "arreglar" las fechas.
+
     Ojo: el 404 está sobrecargado. También lo devuelve un endpoint que no
     existe en este servidor (le pasa a chat_7). Por eso una fuente que nunca
     trae datos merece una mirada, aunque cada corrida se vea limpia.
