@@ -127,6 +127,39 @@ def test_un_archivo_bloqueado_no_tumba_la_limpieza(tmp_path, monkeypatch):
     assert (tmp_path / "analisis_gestion_2026-08-16_1210.xlsx").exists()   # el superviviente
 
 
+def test_una_corrida_no_borra_la_maestra_que_acaba_de_escribir(tmp_path):
+    """Reprocesar un día viejo lo generaba y lo borraba acto seguido: la
+    ventana de retención se mide contra hoy. Que una corrida destruya el
+    archivo que le acaban de encargar no es política, es un defecto."""
+    crear(tmp_path, "analisis_gestion_2026-08-12.xlsx")
+    recien = tmp_path / "analisis_gestion_2026-08-12.xlsx"
+
+    excel_purga.limpiar(tmp_path, dias=3, hora_cierre=18, hoy=HOY,
+                        recien_escritos=[recien])
+    assert recien.exists()
+
+
+def test_lo_recien_escrito_se_protege_solo_en_esa_corrida(tmp_path):
+    """La siguiente corrida sí aplica la retención normal: la protección es
+    para no autodestruirse, no una excepción permanente."""
+    crear(tmp_path, "analisis_gestion_2026-08-12.xlsx")
+    excel_purga.limpiar(tmp_path, dias=3, hora_cierre=18, hoy=HOY,
+                        recien_escritos=[tmp_path / "analisis_gestion_2026-08-12.xlsx"])
+    excel_purga.limpiar(tmp_path, dias=3, hora_cierre=18, hoy=HOY)
+    assert nombres(tmp_path) == []
+
+
+def test_proteger_lo_recien_escrito_no_frena_la_consolidacion(tmp_path):
+    """Los cortes viejos del mismo día se siguen borrando."""
+    crear(tmp_path,
+          "analisis_gestion_2026-08-16_0810.xlsx",
+          "analisis_gestion_2026-08-16_1210.xlsx",
+          "analisis_gestion_2026-08-16_1810.xlsx")
+    excel_purga.limpiar(tmp_path, dias=3, hora_cierre=18, hoy=HOY,
+                        recien_escritos=[tmp_path / "analisis_gestion_2026-08-16_1810.xlsx"])
+    assert nombres(tmp_path) == ["analisis_gestion_2026-08-16_1810.xlsx"]
+
+
 def test_carpeta_inexistente_no_falla(tmp_path):
     assert excel_purga.limpiar(tmp_path / "no-existe") == []
 

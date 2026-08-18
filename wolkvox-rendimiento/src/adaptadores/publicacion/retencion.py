@@ -79,20 +79,35 @@ def _borrar(archivo: Path) -> bool:
 
 
 def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
-            hoy: date | None = None) -> list[Path]:
-    """Consolida los días cerrados y aplica la retención. Devuelve lo borrado."""
+            hoy: date | None = None, recien_escritos: list[Path] | None = None) -> list[Path]:
+    """Consolida los días cerrados y aplica la retención. Devuelve lo borrado.
+
+    `recien_escritos` son las maestras que produjo ESTA corrida, y quedan
+    intocables. Sin eso, reprocesar un día viejo lo generaba y lo borraba
+    acto seguido: la ventana de retención se mide contra hoy, así que un
+    backfill del 12 de agosto cae fuera de ella el mismo día que se pide.
+    Cada regla por separado es correcta; lo que no puede ser es que una
+    corrida destruya el archivo que le acaban de encargar.
+
+    Ojo: los protege durante esta corrida, no para siempre. La siguiente
+    aplicará la retención normal sobre ellos, que es lo que se quiere para
+    las corridas programadas. Si hace falta conservar backfills antiguos,
+    la palanca es DIAS_EXCEL.
+    """
     if not ruta.exists():
         return []
 
     hoy = hoy or date.today()
     vigentes = {(hoy - timedelta(days=n)).isoformat() for n in range(dias)}
     corte_min = hora_cierre * 60
+    intocables = {p.resolve() for p in (recien_escritos or [])}
+    borrable = lambda archivo: archivo.resolve() not in intocables
 
     borrados = []
     for fecha, cortes in _diarios(ruta).items():
         if fecha not in vigentes:
             for _, archivo in cortes:
-                if _borrar(archivo):
+                if borrable(archivo) and _borrar(archivo):
                     borrados.append(archivo)
             continue
 
@@ -107,7 +122,7 @@ def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
 
         conservado = _superviviente(cortes)
         for _, archivo in cortes:
-            if archivo != conservado and _borrar(archivo):
+            if archivo != conservado and borrable(archivo) and _borrar(archivo):
                 borrados.append(archivo)
 
     if borrados:
