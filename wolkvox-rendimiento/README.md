@@ -77,6 +77,7 @@ wolkvox-rendimiento/
 │   │   └── publicacion/
 │   │       ├── excel_analisis.py  # Excel del informe de gestión (la maestra)
 │   │       ├── retencion.py       # consolida cortes del día y purga por antigüedad
+│   │       ├── carpeta_red.py     # copia Excel y tablero a la carpeta de la operación
 │   │       ├── tablero_datos.py   # almacén JSON por periodo
 │   │       ├── tablero_html.py    # render del tablero
 │   │       └── plantillas/
@@ -355,9 +356,26 @@ deje la operación sin tablero.
 Está en el programa y no en el `Jenkinsfile` a propósito: un lock de Jenkins
 solo protege de Jenkins.
 
-**Publicación.** `RUTA_SALIDA` y `RUTA_TABLERO` apuntan a la carpeta compartida
-en el `.env` del servidor. No hay paso de copia posterior ni artefactos que
-mover: el programa escribe donde la operación lee.
+**Publicación.** `RUTA_PUBLICACION` apunta a la carpeta de la operación y cada
+corrida deja ahí el Excel y el tablero. No hay paso de copia posterior ni
+artefactos que mover.
+
+La ruta admite `{anio}` y `{mes}`:
+
+```
+\\nassoporte\credintegral\CARTERA\{anio}\{mes}\Infomes de Gestion
+   ->  ...\CARTERA\2026\08. Agosto\Infomes de Gestion
+```
+
+Se resuelve contra el periodo del informe y no se escribe a mano porque una
+ruta fija seguiría publicando en agosto el 1 de septiembre, y eso no se nota
+en días. El formato `MM. Mes` está tomado de la propia carpeta.
+
+En el destino queda **una sola versión de cada periodo**: antes de copiar se
+borran los archivos de ese mismo periodo, cortes intradía incluidos. Los de
+otros periodos no se tocan — la comparación es por expresión regular sobre la
+etiqueta completa, porque el comodín `analisis_gestion_2026-08*` casaría
+también con `2026-08-18_1431` y el informe mensual borraría los diarios.
 
 ## Despliegue en Jenkins
 

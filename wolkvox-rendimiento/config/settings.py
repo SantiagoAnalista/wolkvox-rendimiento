@@ -22,6 +22,7 @@ class Config:
     ruta_tablero: Path
     dias_excel: int
     hora_cierre_jornada: int
+    ruta_publicacion: str
 
 
 def cargar_config() -> Config:
@@ -60,4 +61,7 @@ def cargar_config() -> Config:
         # consolidan en un solo archivo.
         dias_excel=int(os.getenv("DIAS_EXCEL", "3")),
         hora_cierre_jornada=int(os.getenv("HORA_CIERRE_JORNADA", "18")),
+        # Carpeta de la operación donde se dejan el Excel y el tablero. Admite
+        # {anio} y {mes}. Vacío = no se publica (útil en desarrollo).
+        ruta_publicacion=os.getenv("RUTA_PUBLICACION", "").strip(),
     )

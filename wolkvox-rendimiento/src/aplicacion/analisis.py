@@ -20,8 +20,8 @@ import pandas as pd
 from config.settings import Config, cargar_config
 from src.adaptadores.almacen import horarios as adaptador_horarios
 from src.adaptadores.almacen import respaldo
-from src.adaptadores.publicacion import (excel_analisis, retencion, tablero_datos,
-                                         tablero_html)
+from src.adaptadores.publicacion import (carpeta_red, excel_analisis, retencion,
+                                         tablero_datos, tablero_html)
 from src.adaptadores.wolkvox import extraccion, traduccion
 from src.adaptadores.wolkvox.cliente import WolkvoxClient
 from src.dominio import asistencia, gestion
@@ -183,6 +183,9 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
                                 horarios["umbrales"], horarios["tolerancia_min"],
                                 corte=hora_corte, archivo_excel=destino.name),
         cfg.ruta_tablero)
+
+    if cfg.ruta_publicacion:
+        carpeta_red.publicar_excel(destino, etiqueta, cfg.ruta_publicacion, hasta)
     return destino
 
 
@@ -263,4 +266,7 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
                                    cfg.ruta_tablero,
                                    excel_vigentes=retencion.vigentes(cfg.ruta_salida))
     log.info("Tablero generado: %s", tablero)
+
+    if cfg.ruta_publicacion:
+        carpeta_red.publicar_tablero(tablero, cfg.ruta_publicacion, hasta)
     return 0
