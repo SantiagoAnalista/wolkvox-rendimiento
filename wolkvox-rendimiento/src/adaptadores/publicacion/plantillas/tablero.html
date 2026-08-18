@@ -525,11 +525,11 @@ function panelConexion(detalle, U, corteMin = null) {
   // marca del informe avanzando sola y otras una desconexión real. Quien está
   // conectado sale "En jornada"; quien se quedó atrás del resto del equipo,
   // con la hora que da agent_8.
-  const conexion = r => r["En jornada"]
-    ? `<span class="pill ok"><span class="g">●</span>En jornada</span>`
-    : r["Sin conexión desde"]
-      ? `<span class="pill wa"><span class="g">○</span>Sin conexión ~${esc(r["Sin conexión desde"])}</span>`
-      : esc(r.Salida || "—");
+  const conexion = r => ({
+    "En jornada": `<span class="pill ok"><span class="g">●</span>En jornada</span>`,
+    "Jornada terminada": `<span class="pill nu"><span class="g">✓</span>Terminó ${esc(r["Sin conexión desde"])}</span>`,
+    "Desconectado": `<span class="pill wa"><span class="g">○</span>Sin conexión ~${esc(r["Sin conexión desde"])}</span>`,
+  })[r["Estado conexión"]] ?? esc(r.Salida || "—");
 
   w.innerHTML = `<table><thead><tr><th>Asesor</th><th>Horario</th><th>Entrada</th><th>${corteMin == null ? "Salida" : "Conexión"}</th><th>Logueado</th><th>Estado</th></tr></thead><tbody>` +
     filas.map(f => `<tr><td>${esc(corto(f.r.Agente))}</td><td>${esc(f.r.Horario ?? "")}</td>` +

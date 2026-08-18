@@ -142,7 +142,7 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 filas.append({**base, "Entrada": "", "Salida": "", "Logueado": "",
                               "Min tarde": None, "Min antes": None,
                               "Entró tarde": False, "Salió temprano": False,
-                              "Sin conexión": True, "En jornada": False,
+                              "Sin conexión": True, "Estado conexión": "",
                               "Sin conexión desde": "", "Estado": "Sin conexión"})
                 dia += timedelta(days=1)
                 continue
@@ -168,7 +168,7 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 "Entró tarde": tarde,
                 "Salió temprano": temprano,
                 "Sin conexión": False,
-                "En jornada": False,        # se resuelven abajo, con el día a la vista
+                "Estado conexión": "",      # se resuelven abajo, con el día a la vista
                 "Sin conexión desde": "",
                 "Estado": " y ".join(etiquetas) if etiquetas else "OK",
             })
@@ -181,7 +181,7 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
         # lanzaría KeyError.
         return pd.DataFrame()
 
-    return _marcar_conexion(pd.DataFrame(filas), hoy, df_hora) \
+    return _marcar_conexion(pd.DataFrame(filas), hoy, df_hora, tolerancia) \
         .sort_values(["Agente", "Fecha"]).reset_index(drop=True)
 
 
@@ -206,7 +206,11 @@ def _minuto_final(df_hora: pd.DataFrame) -> pd.Series:
         .set_axis(ultima["agent_name"].map(normalizar))
 
 
-def _marcar_conexion(det: pd.DataFrame, hoy: date, df_hora: pd.DataFrame | None) -> pd.DataFrame:
+EN_JORNADA, TERMINADA, DESCONECTADO = "En jornada", "Jornada terminada", "Desconectado"
+
+
+def _marcar_conexion(det: pd.DataFrame, hoy: date, df_hora: pd.DataFrame | None,
+                     tolerancia: int = 0) -> pd.DataFrame:
     """Resuelve, en una jornada en curso, quién sigue conectado y desde cuándo no.
 
     El `logout` de agent_7 no sirve para esto: unas veces es la marca del
@@ -221,18 +225,25 @@ def _marcar_conexion(det: pd.DataFrame, hoy: date, df_hora: pd.DataFrame | None)
     llegó el que más avanzó: quien se queda `MARGEN_FRONTERA_MIN` por detrás
     se desconectó, y se sabe a qué minuto.
 
+    Quien se desconecta a su hora de salida no "se fue": TERMINÓ. Se separan
+    los dos casos contra el horario pactado, porque marcar como incidencia a
+    quien cumplió su turno llena el corte de las 18:10 de alarmas falsas y
+    entierra la única que importa.
+
     Su límite, a propósito: si TODO el equipo sale a la vez, el último en irse
     marca la frontera y aparece "en jornada" hasta el corte siguiente. En el
     caso que importa —uno se va y el resto sigue— se detecta enseguida, porque
     la frontera sigue avanzando sin él.
     """
-    det["En jornada"] = (det["Fecha"] == hoy.isoformat()) & (~det["Sin conexión"])
+    en_curso = (det["Fecha"] == hoy.isoformat()) & (~det["Sin conexión"])
+    det["Estado conexión"] = ""
     det["Sin conexión desde"] = ""
-    if not det["En jornada"].any():
+    det.loc[en_curso, "Estado conexión"] = EN_JORNADA
+    if not en_curso.any():
         return det
 
-    # Sin agent_8 no se adivina: se deja "en jornada" y sin hora de salida.
-    det.loc[det["En jornada"], "Salida"] = ""
+    # Sin agent_8 no se adivina: todos quedan "en jornada" y sin hora.
+    det.loc[en_curso, "Salida"] = ""
     if df_hora is None or df_hora.empty:
         return det
 
@@ -241,11 +252,12 @@ def _marcar_conexion(det: pd.DataFrame, hoy: date, df_hora: pd.DataFrame | None)
         return det
     frontera = finales.max()
 
-    for i in det.index[det["En jornada"]]:
+    for i in det.index[en_curso]:
         suyo = finales.get(normalizar(det.at[i, "Agente"]))
         if suyo is None or frontera - suyo <= MARGEN_FRONTERA_MIN:
             continue
-        det.at[i, "En jornada"] = False
+        fin_pactado = _a_minutos(str(det.at[i, "Horario"]).split("-")[-1])
+        det.at[i, "Estado conexión"] = TERMINADA if suyo >= fin_pactado - tolerancia else DESCONECTADO
         det.at[i, "Sin conexión desde"] = f"{int(suyo) // 60:02d}:{int(suyo) % 60:02d}"
     return det
 

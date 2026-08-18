@@ -266,7 +266,7 @@ def test_en_jornada_en_curso_no_se_publica_hora_de_salida():
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 10)).set_index("Agente")
     for quien in ("Ana", "Beto"):
-        assert det.loc[quien, "En jornada"]
+        assert det.loc[quien, "Estado conexión"] == asistencia.EN_JORNADA
         assert det.loc[quien, "Salida"] == ""
 
 
@@ -283,7 +283,7 @@ def test_un_logout_viejo_en_jornada_tampoco_se_publica():
     ])
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 10)).set_index("Agente")
-    assert det.loc["Beto", "En jornada"]
+    assert det.loc["Beto", "Estado conexión"] == asistencia.EN_JORNADA
     assert det.loc["Beto", "Salida"] == ""
 
 
@@ -293,7 +293,7 @@ def test_en_un_dia_cerrado_la_salida_es_la_salida():
                    "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
     det = asistencia.detalle(df, HORARIOS, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 12))
-    assert not det.loc[0, "En jornada"]
+    assert det.loc[0, "Estado conexión"] == ""
     assert det.loc[0, "Salida"] == "18:00:00"
 
 
@@ -322,8 +322,8 @@ def test_quien_se_queda_atras_del_equipo_se_marca_desconectado():
     ])
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
-    assert det.loc["Ana", "En jornada"]
-    assert not det.loc["Beto", "En jornada"]
+    assert det.loc["Ana", "Estado conexión"] == asistencia.EN_JORNADA
+    assert det.loc["Beto", "Estado conexión"] == asistencia.DESCONECTADO
     assert det.loc["Beto", "Sin conexión desde"] == "13:29"
 
 
@@ -344,8 +344,8 @@ def test_en_la_frontera_del_informe_se_da_por_conectado():
     ])
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
-    assert det.loc["Ana", "En jornada"]
-    assert det.loc["Beto", "En jornada"]     # 4 min de diferencia: es ruido del informe
+    assert det.loc["Ana", "Estado conexión"] == asistencia.EN_JORNADA
+    assert det.loc["Beto", "Estado conexión"] == asistencia.EN_JORNADA   # 4 min: ruido del informe
 
 
 def test_sin_agent_8_nadie_queda_marcado_como_desconectado():
@@ -355,7 +355,7 @@ def test_sin_agent_8_nadie_queda_marcado_como_desconectado():
                    "login": "2026-08-10 08:00:00", "logout": "2026-08-10 13:29:00"}])
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 10), df_hora=pd.DataFrame())
-    assert det.loc[0, "En jornada"]
+    assert det.loc[0, "Estado conexión"] == asistencia.EN_JORNADA
     assert det.loc[0, "Sin conexión desde"] == ""
     assert det.loc[0, "Salida"] == ""
 
@@ -368,6 +368,49 @@ def test_en_un_dia_cerrado_agent_8_no_cambia_nada():
     hora = _hora([{"agent_name": "Ana", "hora": 13, "login_time_seg": 29 * 60}])
     det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
                              hoy=date(2026, 8, 12), df_hora=hora)
-    assert not det.loc[0, "En jornada"]
+    assert det.loc[0, "Estado conexión"] == ""
     assert det.loc[0, "Sin conexión desde"] == ""
     assert det.loc[0, "Salida"] == "18:00:00"
+
+
+def test_terminar_el_turno_a_su_hora_no_es_una_desconexion():
+    """Quien se desconecta a su hora de salida TERMINO. Marcarlo como
+    incidencia llena el corte de las 18:10 de alarmas falsas y entierra la
+    unica que importa."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"],
+                "por_defecto": {**JORNADA, "lunes": ["08:00", "17:30"]}}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 17:30:00"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 17:58:00"},
+    ])
+    hora = _hora([
+        {"agent_name": "Ana", "hora": 17, "login_time_seg": 30 * 60},
+        {"agent_name": "Beto", "hora": 17, "login_time_seg": 58 * 60},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
+    assert det.loc["Ana", "Estado conexión"] == asistencia.TERMINADA
+    assert det.loc["Ana", "Sin conexión desde"] == "17:30"
+    assert det.loc["Beto", "Estado conexión"] == asistencia.EN_JORNADA
+
+
+def test_irse_antes_de_la_hora_si_es_una_desconexion():
+    """Mismo mecanismo, distinto veredicto: Ana se fue 2h antes de su turno."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"],
+                "por_defecto": {**JORNADA, "lunes": ["08:00", "17:30"]}}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 15:30:00"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 17:58:00"},
+    ])
+    hora = _hora([
+        {"agent_name": "Ana", "hora": 15, "login_time_seg": 30 * 60},
+        {"agent_name": "Beto", "hora": 17, "login_time_seg": 58 * 60},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
+    assert det.loc["Ana", "Estado conexión"] == asistencia.DESCONECTADO
+    assert det.loc["Ana", "Sin conexión desde"] == "15:30"
