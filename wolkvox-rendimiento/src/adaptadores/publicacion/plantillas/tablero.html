@@ -506,10 +506,16 @@ function panelConexion(detalle, U, corteMin = null) {
   const res = document.createElement("p");
   res.className = "sub"; res.style.marginTop = "10px";
   const fuerte = t => `<b style="color:var(--ink)">${t}</b>`;
+  // "Todavía no se conecta" solo tiene sentido con la jornada en curso. En un
+  // día ya cerrado, quien no aparece es que no vino: no está en periodo de
+  // gracia, y decirlo así restaría gravedad a una ausencia.
+  const enCurso = corteMin != null;
   res.innerHTML = atender
-    ? `${fuerte(`${atender} de ${filas.length}`)} asesores requieren atención en este corte.`
+    ? `${fuerte(`${atender} de ${filas.length}`)} asesores requieren atención${enCurso ? " en este corte" : ""}.`
     : espera
-      ? `Nadie fuera de tolerancia todavía: ${fuerte(espera)} aún no se conecta, dentro de los ${U.tolerancia_min} minutos de gracia.`
+      ? (enCurso
+        ? `Nadie fuera de tolerancia todavía: ${fuerte(espera)} aún no se conecta, dentro de los ${U.tolerancia_min} minutos de gracia.`
+        : `${fuerte(espera)} sin conexión en toda la jornada; el resto cumplió horario.`)
       : `${fuerte(`Los ${filas.length} asesores`)} cumplieron horario.`;
   c.appendChild(res);
 
@@ -700,60 +706,123 @@ function chartAuxiliares(aux, nomina = []) {
 }
 
 /* ══ Curva horaria ════════════════════════════════════════════════ */
-function chartCurva(curva) {
-  const c = card("half", "Llamadas por hora",
-    "Solo voz. Sirve para ver si la caída del mediodía es la esperada o si se alargó.");
-  if (!curva.length) { c.appendChild(vacio("Sin llamadas registradas en el día.")); return c; }
+const CANALES = [
+  { k: "Llamadas",  label: "Llamadas",           color: "var(--s1)", tok: "--s1" },
+  { k: "Digitales", label: "Digitales iniciadas", color: "var(--s2)", tok: "--s2" }
+];
 
-  const porHora = new Map();
-  curva.forEach(r => {
-    const h = num(r.Hora), n = num(r.Llamadas) || 0;
+/** Agrupa la curva por hora; con `agente`, solo la suya. */
+function porHora(curva, agente = null) {
+  const acc = new Map();
+  curva.filter(r => !agente || r.Agente === agente).forEach(r => {
+    const h = num(r.Hora);
     if (h == null) return;
-    if (!porHora.has(h)) porHora.set(h, { hora: h, total: 0, agentes: [] });
-    const o = porHora.get(h);
-    o.total += n;
-    o.agentes.push([r.Agente, n]);
+    const o = acc.get(h) || { hora: h, Llamadas: 0, Digitales: 0, agentes: new Map() };
+    const voz = num(r.Llamadas) || 0, dig = num(r.Digitales) || 0;
+    o.Llamadas += voz;
+    o.Digitales += dig;
+    const a = o.agentes.get(r.Agente) || [0, 0];
+    o.agentes.set(r.Agente, [a[0] + voz, a[1] + dig]);
+    acc.set(h, o);
   });
-  const rows = [...porHora.values()].sort((a, b) => a.hora - b.hora);
+  return [...acc.values()].sort((a, b) => a.hora - b.hora);
+}
 
+function tablaCurva(curva, nomina) {
+  const d = document.createElement("details");
+  d.className = "tv";
+  d.innerHTML = `<summary>Ver los datos en tabla, por asesor</summary>`;
+
+  const agentes = [...new Set([...curva.map(r => r.Agente), ...nomina.map(r => r.Agente)])]
+    .sort((a, b) => corto(a).localeCompare(corto(b)));
+
+  const barra = document.createElement("div");
+  barra.className = "tv-filtro";
+  const id = "curva-" + Math.random().toString(36).slice(2, 8);
+  barra.innerHTML = `<label for="${id}">Asesor</label><select id="${id}">` +
+    `<option value="">Todo el equipo</option>` +
+    agentes.map(a => `<option value="${esc(a)}">${esc(corto(a))}</option>`).join("") + `</select>`;
+
+  const cont = document.createElement("div");
+  function pintar(agente) {
+    const filas = porHora(curva, agente || null);
+    if (!filas.length) {
+      cont.innerHTML = `<div class="empty">${agente
+        ? esc(corto(agente)) + " no registró gestiones en el periodo."
+        : "Sin gestiones registradas."}</div>`;
+      return;
+    }
+    const tv = filas.reduce((a, o) => a + o.Llamadas, 0);
+    const td = filas.reduce((a, o) => a + o.Digitales, 0);
+    cont.innerHTML = `<div class="tw"><table><thead><tr>` +
+      `<th>Hora</th><th>Llamadas</th><th>Digitales iniciadas</th><th>Total</th>` +
+      `</tr></thead><tbody>` +
+      filas.map(o => `<tr><td>${String(o.hora).padStart(2, "0")}:00</td>` +
+        `<td>${o.Llamadas}</td><td>${o.Digitales}</td><td>${o.Llamadas + o.Digitales}</td></tr>`).join("") +
+      `<tr><td><b>Total</b></td><td><b>${tv}</b></td><td><b>${td}</b></td>` +
+      `<td><b>${tv + td}</b></td></tr></tbody></table></div>`;
+  }
+  barra.querySelector("select").addEventListener("change", e => pintar(e.target.value));
+  pintar("");
+  d.append(barra, cont);
+  return d;
+}
+
+function chartCurva(curva, nomina = []) {
+  const c = card("half", "Gestiones por hora",
+    "Voz y digital en paralelo. Ojo con la diferencia: la llamada se fecha cuando ocurre, " +
+    "pero la conversación digital se fecha cuando se abre y puede seguir viva horas. " +
+    "La barra naranja dice cuándo ENTRÓ el tráfico, no cuándo se trabajó.");
+  if (!curva.length) { c.appendChild(vacio("Sin gestiones registradas en el día.")); return c; }
+  c.appendChild(legend(CANALES));
+
+  const rows = porHora(curva);
   const W = 560, H = 220, L = 38, R = 12, T = 14, B = 32;
   const pw = W - L - R, ph = H - T - B;
-  const max = Math.max(...rows.map(r => r.total));
+  const max = Math.max(1, ...rows.flatMap(r => [r.Llamadas, r.Digitales]));
   const step = Math.ceil(max / 4 / 5) * 5 || 5;
   const yMax = Math.ceil(max / step) * step;
-  const bw = Math.min(24, pw / rows.length - 8);
+  const franja = pw / rows.length;
+  const bw = Math.max(4, Math.min(15, franja / 2 - 3));   // 2 barras + separación
 
   const plot = document.createElement("div"); plot.className = "plot";
   const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
 
   for (let v = 0; v <= yMax; v += step) {
     const y = T + ph - v / yMax * ph;
-    svg("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }, s);
+    svg("line", { x1: L, x2: W - R, y1: y, y2: y,
+                  stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }, s);
     svg("text", { x: L - 8, y: y + 4, "text-anchor": "end", ...AX }, s).textContent = v;
   }
 
   rows.forEach((r, i) => {
-    const cx = L + (i + 0.5) * (pw / rows.length);
-    const h = r.total / yMax * ph, y = T + ph - h;
+    const cx = L + (i + 0.5) * franja;
     const g = svg("g", {}, s);
-    svg("path", { d: rrect(cx - bw / 2, y, bw, h, 4, 4, 0, 0),
-                  fill: r.total === max ? "var(--bar-loud)" : "var(--bar-quiet)" }, g);
-    svg("rect", { x: cx - (pw / rows.length) / 2, y: T, width: pw / rows.length, height: ph, fill: "transparent" }, g);
-    const det = r.agentes.sort((a, b) => b[1] - a[1])
-      .map(([a, n]) => `<div class="t-r">${esc(corto(a))}: <b>${n}</b></div>`).join("");
+    CANALES.forEach((canal, j) => {
+      const v = r[canal.k];
+      if (v <= 0) return;
+      const h = v / yMax * ph, y = T + ph - h;
+      // Las dos barras se tocan por el centro de la franja, con 2px de aire.
+      const x = j === 0 ? cx - bw - 1 : cx + 1;
+      svg("path", { d: rrect(x, y, bw, h, 4, 4, 0, 0), fill: canal.color }, g);
+    });
+    svg("rect", { x: cx - franja / 2, y: T, width: franja, height: ph, fill: "transparent" }, g);
+
+    const det = [...r.agentes.entries()]
+      .sort((a, b) => (b[1][0] + b[1][1]) - (a[1][0] + a[1][1]))
+      .map(([a, [voz, dig]]) => `<div class="t-r">${esc(corto(a))}: <b>${voz}</b> voz · <b>${dig}</b> digital</div>`)
+      .join("");
     hover(g, `<div class="t-h">${String(r.hora).padStart(2, "0")}:00 – ${String(r.hora + 1).padStart(2, "0")}:00</div>` +
-      `<div class="t-r">Total: <b>${r.total} llamadas</b></div>${det}`);
+      `<div class="t-r">Llamadas: <b>${r.Llamadas}</b></div>` +
+      `<div class="t-r">Digitales iniciadas: <b>${r.Digitales}</b></div>${det}`);
+
     svg("text", { x: cx, y: H - B + 16, "text-anchor": "middle", ...AX }, s)
       .textContent = String(r.hora).padStart(2, "0");
-    if (r.total === max)
-      svg("text", { x: cx, y: y - 6, "text-anchor": "middle", fill: "var(--ink)",
-                    "font-size": "11", "font-weight": "650" }, s).textContent = r.total;
   });
   svg("text", { x: L + pw / 2, y: H - 2, "text-anchor": "middle", ...AX }, s).textContent = "Hora del día";
 
   c.appendChild(plot);
-  c.appendChild(vistaTabla(["Hora", "Llamadas"],
-    rows.map(r => [`${String(r.hora).padStart(2, "0")}:00`, r.total])));
+  c.appendChild(tablaCurva(curva, nomina));
   return c;
 }
 
@@ -914,7 +983,7 @@ function render(p) {
   g.innerHTML = "";
   if (p.periodo === "dia") {
     g.appendChild(panelConexion(C.puntualidad_detalle || [], U, corteMin));
-    g.appendChild(chartCurva(C.curva_horaria || []));
+    g.appendChild(chartCurva(C.curva_horaria || [], C.puntualidad_agente || []));
   } else {
     g.appendChild(chartCalendario(C.puntualidad_detalle || [], U));
     g.appendChild(chartCruce(cruce, U));

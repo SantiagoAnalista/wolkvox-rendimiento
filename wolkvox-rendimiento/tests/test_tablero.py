@@ -33,7 +33,7 @@ def cuadros_minimos(**extra):
         "efectividad": pd.DataFrame([{"Agente": "Ana", "% Efectividad total": 2.2}]),
         "cruce": pd.DataFrame([{"Agente": "Ana", "Alerta": "No tipifica (55%)"}]),
         "auxiliares": pd.DataFrame([{"Agente": "Ana", "Estado auxiliar": "Almuerzo", "Horas": 1.02}]),
-        "curva_horaria": pd.DataFrame([{"Hora": 8, "Agente": "Ana", "Llamadas": 12}]),
+        "curva_horaria": pd.DataFrame([{"Hora": 8, "Agente": "Ana", "Llamadas": 12, "Digitales": 3}]),
     }
     base.update(extra)
     return base
@@ -47,21 +47,49 @@ def construir(**extra):
 
 # ── gestion.curva_horaria ────────────────────────────────────────────────
 
+LLAMADAS = pd.DataFrame([
+    {"hora": 8, "agent_name": "Ana"}, {"hora": 8, "agent_name": "Ana"},
+    {"hora": 8, "agent_name": "Beto"}, {"hora": 9, "agent_name": "Ana"},
+])
+CHATS = pd.DataFrame([
+    {"hora": 8, "agent_name": "Ana"}, {"hora": 10, "agent_name": "Beto"},
+])
+
+
 def test_curva_horaria_agrupa_por_hora_y_agente():
-    llamadas = pd.DataFrame([
-        {"hora": 8, "agent_name": "Ana"}, {"hora": 8, "agent_name": "Ana"},
-        {"hora": 8, "agent_name": "Beto"}, {"hora": 9, "agent_name": "Ana"},
-    ])
-    curva = gestion.curva_horaria(llamadas).set_index(["Hora", "Agente"])
+    curva = gestion.curva_horaria(LLAMADAS).set_index(["Hora", "Agente"])
     assert curva.loc[(8, "Ana"), "Llamadas"] == 2
     assert curva.loc[(8, "Beto"), "Llamadas"] == 1
     assert curva.loc[(9, "Ana"), "Llamadas"] == 1
 
 
+def test_curva_horaria_separa_voz_de_digital():
+    """Dos columnas y no una suma: la llamada se fecha cuando ocurre, la
+    conversación digital cuando se abre. Mezclarlas diría algo falso."""
+    curva = gestion.curva_horaria(LLAMADAS, CHATS).set_index(["Hora", "Agente"])
+    assert curva.loc[(8, "Ana"), "Llamadas"] == 2
+    assert curva.loc[(8, "Ana"), "Digitales"] == 1
+    assert curva.loc[(9, "Ana"), "Digitales"] == 0     # hora con voz pero sin digital
+
+
+def test_una_hora_solo_digital_igual_aparece():
+    """Beto abrió un chat a las 10 sin llamar: esa franja no puede perderse."""
+    curva = gestion.curva_horaria(LLAMADAS, CHATS).set_index(["Hora", "Agente"])
+    assert curva.loc[(10, "Beto"), "Digitales"] == 1
+    assert curva.loc[(10, "Beto"), "Llamadas"] == 0
+
+
+def test_curva_horaria_sin_chats_deja_la_columna_en_cero():
+    """El modo semanal y el mensual la llaman igual; no puede faltar la columna."""
+    curva = gestion.curva_horaria(LLAMADAS)
+    assert list(curva.columns) == gestion.COLUMNAS_CURVA
+    assert curva["Digitales"].sum() == 0
+
+
 def test_curva_horaria_sin_datos_devuelve_columnas_esperadas():
     """El tablero itera las columnas: un DataFrame vacío sin ellas rompería."""
-    vacia = gestion.curva_horaria(pd.DataFrame())
-    assert list(vacia.columns) == ["Hora", "Agente", "Llamadas"]
+    vacia = gestion.curva_horaria(pd.DataFrame(), pd.DataFrame())
+    assert list(vacia.columns) == gestion.COLUMNAS_CURVA
     assert vacia.empty
 
 

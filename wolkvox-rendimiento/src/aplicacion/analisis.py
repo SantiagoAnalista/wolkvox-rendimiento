@@ -145,7 +145,7 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "auxiliares": gestion.auxiliares_por_tipo(auxiliar),
         "efectividad": efect,
         "cruce": gestion.cruce(tiempos, efect, activos, horarios["umbrales"]),
-        "curva_horaria": gestion.curva_horaria(filtrar("llamadas")),
+        "curva_horaria": gestion.curva_horaria(filtrar("llamadas"), filtrar("chats")),
     }
 
     hora_corte = f"{corte:%H:%M}" if corte else None
