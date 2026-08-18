@@ -1,9 +1,12 @@
-# .gitignore único del repositorio.
+# .gitignore único del repositorio. Vive dentro del proyecto porque en la raíz
+# solo queda esta carpeta; las rutas van relativas a aquí.
 #
-# Los patrones sin barra ("*.pyc", ".env") aplican en cualquier carpeta.
-# Los que llevan barra quedan anclados a esta raíz, por eso las rutas del
-# proyecto van con su prefijo: si mañana se agrega otro proyecto al repo,
-# sus rutas se listan aquí igual.
+# Los patrones sin barra (".env", "*.pyc") aplican en cualquier subcarpeta.
+# Los que llevan barra quedan anclados a este directorio.
+#
+# Lo que quede FUERA de esta carpeta —por ejemplo `.claude/` en la raíz— no lo
+# alcanza este archivo. Como es configuración local de cada equipo y no tiene
+# nada versionado, su sitio es `.git/info/exclude`, que no se sube al repo.
 
 # --- Secretos ---
 .env
@@ -24,22 +27,19 @@ htmlcov/
 # --- Datos de entrada y respaldos del pipeline ---
 # Los respaldos son regenerables y traen teléfonos y documentos de clientes:
 # no se suben nunca.
-wolkvox-rendimiento/src/data/*.csv
+src/data/*.csv
 # Los cronogramas son ENTRADA de la operación, no salida: sin ellos el
 # pipeline falla. Al no versionarlos hay que copiarlos a mano en cada equipo,
 # y cuatro pruebas de horarios se saltan solas (172 passed, 4 skipped en vez
 # de 176). Ver la sección de arranque del README.
-wolkvox-rendimiento/src/data/*.xlsx
+src/data/*.xlsx
 
 # --- Salidas generadas ---
 # Excel, tablero y su almacén JSON: todo se rehace en cada corrida.
-wolkvox-rendimiento/src/output/
+src/output/
 
 # --- Registros ---
-wolkvox-rendimiento/logs/*.log
-
-# --- Herramientas locales ---
-.claude/settings.local.json
+logs/*.log
 
 # --- Temporales de Office ---
 # Excel deja ~$archivo.xlsx mientras alguien lo tiene abierto.

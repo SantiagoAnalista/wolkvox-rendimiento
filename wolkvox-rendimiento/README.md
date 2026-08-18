@@ -12,7 +12,7 @@ extraer  ->  transformar  ->  calcular  ->  publicar
 ```
 
 Los nombres de campo de la API se tomaron de la colección oficial de Postman
-(`wolkvox APIs (ES).postman_collection.json`), no de la documentación web.
+(`docs/wolkvox APIs (ES).postman_collection.json`), no de la documentación web.
 
 ## Arquitectura
 
@@ -81,11 +81,16 @@ wolkvox-rendimiento/
 │   │       ├── tablero_html.py    # render del tablero
 │   │       └── plantillas/
 │   │           └── tablero.html   # la plantilla, autocontenida
-│   ├── data/                      # backup CSV (en .gitignore)
+│   ├── data/                      # cronogramas y backup CSV (en .gitignore)
 │   └── output/                    # Excel y tablero generados (en .gitignore)
+├── docs/
+│   ├── automatizacion-rendimiento.md          # documento de diseño
+│   └── wolkvox APIs (ES).postman_collection.json
 ├── tests/
 └── logs/
 ```
+
+El repositorio contiene solo esta carpeta: no hay nada suelto en la raíz.
 
 `config/paths.py` define `ROOT_DIR` una sola vez; el resto del proyecto lo
 importa desde ahí en vez de recalcular rutas relativas por su cuenta.
@@ -97,7 +102,7 @@ importa desde ahí en vez de recalcular rutas relativas por su cuenta.
    Integraciones → Tokens).
 2. `pip install -r requirements.txt`
 3. Copiar los cronogramas de la operación a `src/data/`: no se versionan, el
-   `.gitignore` de la raíz los excluye junto con los respaldos.
+   `.gitignore` los excluye junto con los respaldos.
 4. `python main.py --analisis --periodo semana`
 
 ## Uso
