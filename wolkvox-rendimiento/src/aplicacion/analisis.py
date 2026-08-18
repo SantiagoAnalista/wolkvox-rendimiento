@@ -74,7 +74,13 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
                     acumulado[nombre].append(df)
                     log.info("  %s %s: %d registros", etiqueta, nombre, len(df))
                 except Exception as e:
-                    log.error("  %s %s falló: %s", etiqueta, nombre, e)
+                    # Un 404 aquí no es un fallo: Wolkvox contesta así cuando
+                    # no hay registros en la ventana. A las 08:10 nadie ha
+                    # tomado una pausa ni ha tenido un chat todavía.
+                    if extraccion.es_sin_datos(e):
+                        log.info("  %s %s: sin datos en la ventana", etiqueta, nombre)
+                    else:
+                        log.error("  %s %s falló: %s", etiqueta, nombre, e)
                 time.sleep(2)
 
     dfs = {k: (pd.concat(v, ignore_index=True) if any(not d.empty for d in v) else pd.DataFrame())

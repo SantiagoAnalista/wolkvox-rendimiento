@@ -21,6 +21,22 @@ LIMITE_REGISTROS_API = 60_000
 MARGEN_SEGURIDAD = 59_000
 
 
+def es_sin_datos(error: Exception) -> bool:
+    """¿Este fallo es en realidad "no hay nada en esa ventana"?
+
+    Wolkvox responde 404 en vez de una lista vacía cuando no hay registros:
+    un domingo, un festivo, o las 08:10 de un martes antes de que nadie haya
+    tomado una pausa. Sin esta distinción, cada corrida temprana llena el log
+    de ERROR por algo que no pasó, y un log que grita cuando no hay problema
+    enseña a ignorarlo.
+
+    Ojo: el 404 está sobrecargado. También lo devuelve un endpoint que no
+    existe en este servidor (le pasa a chat_7). Por eso una fuente que nunca
+    trae datos merece una mirada, aunque cada corrida se vea limpia.
+    """
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404
+
+
 def _rango(dt_ini: datetime, dt_fin: datetime) -> dict:
     return {"date_ini": dt_ini.strftime(FMT), "date_end": dt_fin.strftime(FMT)}
 
@@ -169,7 +185,7 @@ def tiempo_auxiliar_por_dia(client: WolkvoxClient, dt_ini: datetime, dt_fin: dat
             lote = client.consultar("reports_manager.php", {"api": "agent_3", **_rango(ini, fin)})
             registros.extend({**fila, "fecha": dia.isoformat()} for fila in lote)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
+            if es_sin_datos(e):
                 sin_datos += 1
             else:
                 fallidos.append(dia.isoformat())

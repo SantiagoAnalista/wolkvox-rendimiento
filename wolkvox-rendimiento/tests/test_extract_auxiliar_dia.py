@@ -64,3 +64,28 @@ def test_un_error_distinto_de_404_tampoco_pierde_el_resto():
 def test_ningun_dia_con_datos_devuelve_lista_vacia():
     cliente = ClienteFalso(dias_con_datos=set())
     assert extract.tiempo_auxiliar_por_dia(*(cliente, *RANGO), pausa_seg=0) == []
+
+
+# --- 404 = "sin datos", no un fallo --------------------------------------
+
+def _http_error(codigo: int) -> httpx.HTTPStatusError:
+    peticion = httpx.Request("GET", "https://wv0010.wolkvox.com/api/v2/x")
+    return httpx.HTTPStatusError("x", request=peticion,
+                                 response=httpx.Response(codigo, request=peticion))
+
+
+def test_404_se_reconoce_como_ventana_sin_datos():
+    """Wolkvox contesta 404 en vez de una lista vacia: un domingo, un festivo
+    o las 08:10 antes de que nadie haya tomado una pausa."""
+    assert extract.es_sin_datos(_http_error(404))
+
+
+@pytest.mark.parametrize("codigo", [400, 401, 403, 429, 500, 503])
+def test_los_demas_codigos_si_son_fallos(codigo):
+    assert not extract.es_sin_datos(_http_error(codigo))
+
+
+def test_un_error_que_no_es_http_no_se_confunde_con_falta_de_datos():
+    """Un timeout o un fallo de red tienen que seguir saliendo como error."""
+    assert not extract.es_sin_datos(httpx.ConnectTimeout("se agoto el tiempo"))
+    assert not extract.es_sin_datos(ValueError("otra cosa"))
