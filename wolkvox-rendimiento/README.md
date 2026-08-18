@@ -96,8 +96,8 @@ importa desde ahí en vez de recalcular rutas relativas por su cuenta.
    servidor, ej. `3211`) y `WOLKVOX_TOKEN` (wolkvox Manager → Configuración →
    Integraciones → Tokens).
 2. `pip install -r requirements.txt`
-3. Copiar los cronogramas de la operación a `src/data/` (los `.xlsx` no se
-   versionan: el `.gitignore` de la raíz excluye `*.xlsx` y `*.csv`).
+3. Copiar los cronogramas de la operación a `src/data/`: no se versionan, el
+   `.gitignore` de la raíz los excluye junto con los respaldos.
 4. `python main.py --analisis --periodo semana`
 
 ## Uso
@@ -359,9 +359,12 @@ cron no lleva fechas cableadas: en agosto el job mensual saca julio solo.
 2. **Servidor**: ajustar `WOLKVOX_SERVER` en el bloque `environment` si no es
    `0010`.
 3. **Correo de fallo**: cambiar el destinatario en el bloque `post { failure }`.
-4. **Cronogramas**: los `src/data/Horarios *.xlsx` **sí se versionan** (el
-   `.gitignore` solo excluye los `.csv` de backup). Cada mes hay que subir el
-   cronograma nuevo, o el informe caerá al horario por defecto.
+4. **Cronogramas**: los `src/data/Horarios *.xlsx` **no se versionan**, así que
+   el checkout de Jenkins no los trae. Hay que dejarlos en el workspace del
+   agente (o montar `src/data` desde la carpeta compartida) y subir el
+   cronograma nuevo cada mes. Sin ellos la corrida falla con
+   `FileNotFoundError`, que es preferible a calcular tardanzas contra el
+   horario por defecto.
 
 **Un job por modo**, todos apuntando a este mismo `Jenkinsfile`:
 

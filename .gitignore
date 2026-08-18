@@ -1,23 +1,15 @@
-# Reglas transversales a TODO el repositorio.
+# .gitignore único del repositorio.
 #
-# Lo específico de un proyecto va en el .gitignore de ese proyecto: una regla
-# vive donde viven las rutas que nombra. `src/data/*.csv` no significa nada
-# aquí arriba, y escribirlo como `wolkvox-rendimiento/src/data/*.csv` ataría
-# la raíz a la estructura interna del proyecto.
-#
-# Tampoco se prohíben extensiones en bloque (`*.xlsx`, `*.csv`). Un veto así
-# parece una regla de datos y en realidad es un veto a un tipo de archivo:
-# esconde de paso los cronogramas que la operación necesita y cualquier
-# fixture de pruebas que se agregue mañana. Las rutas concretas van abajo,
-# en cada proyecto.
+# Los patrones sin barra ("*.pyc", ".env") aplican en cualquier carpeta.
+# Los que llevan barra quedan anclados a esta raíz, por eso las rutas del
+# proyecto van con su prefijo: si mañana se agrega otro proyecto al repo,
+# sus rutas se listan aquí igual.
 
 # --- Secretos ---
-# Duplicado a propósito en cada proyecto: un .env filtrado cuesta mucho más
-# que una regla repetida.
 .env
 .env.local
 
-# --- Entornos virtuales y cachés de Python (indeseables en cualquier carpeta) ---
+# --- Entornos virtuales y cachés de Python ---
 .venv/
 venv/
 env/
@@ -29,8 +21,29 @@ __pycache__/
 .coverage
 htmlcov/
 
+# --- Datos de entrada y respaldos del pipeline ---
+# Los respaldos son regenerables y traen teléfonos y documentos de clientes:
+# no se suben nunca.
+wolkvox-rendimiento/src/data/*.csv
+# Los cronogramas son ENTRADA de la operación, no salida: sin ellos el
+# pipeline falla. Al no versionarlos hay que copiarlos a mano en cada equipo,
+# y cuatro pruebas de horarios se saltan solas (172 passed, 4 skipped en vez
+# de 176). Ver la sección de arranque del README.
+wolkvox-rendimiento/src/data/*.xlsx
+
+# --- Salidas generadas ---
+# Excel, tablero y su almacén JSON: todo se rehace en cada corrida.
+wolkvox-rendimiento/src/output/
+
+# --- Registros ---
+wolkvox-rendimiento/logs/*.log
+
 # --- Herramientas locales ---
 .claude/settings.local.json
+
+# --- Temporales de Office ---
+# Excel deja ~$archivo.xlsx mientras alguien lo tiene abierto.
+~$*
 
 # --- Sistema operativo / editores ---
 Thumbs.db
