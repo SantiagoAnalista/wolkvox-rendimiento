@@ -521,9 +521,16 @@ function panelConexion(detalle, U, corteMin = null) {
 
   const w = document.createElement("div");
   w.className = "tw"; w.style.marginTop = "10px";
+  // Sin hora de salida mientras la jornada esté en curso: el logout de
+  // Wolkvox no distingue "se fue" de "está en auxiliar", así que publicarlo
+  // diría que el asesor se marchó estando en su puesto.
+  const salida = r => r["En jornada"]
+    ? `<span class="pill ok"><span class="g">●</span>En jornada</span>`
+    : esc(r.Salida || "—");
+
   w.innerHTML = `<table><thead><tr><th>Asesor</th><th>Horario</th><th>Entrada</th><th>Salida</th><th>Logueado</th><th>Estado</th></tr></thead><tbody>` +
     filas.map(f => `<tr><td>${esc(corto(f.r.Agente))}</td><td>${esc(f.r.Horario ?? "")}</td>` +
-      `<td>${esc(f.r.Entrada || "—")}</td><td>${esc(f.r.Salida || "—")}</td>` +
+      `<td>${esc(f.r.Entrada || "—")}</td><td>${salida(f.r)}</td>` +
       `<td>${esc(f.r.Logueado || "—")}</td><td>${pill(f.st.k, f.st.txt, f.st.glifo)}</td></tr>`).join("") +
     `</tbody></table>`;
   c.appendChild(w);

@@ -246,3 +246,52 @@ def test_reporta_el_total_de_minutos_de_salida_anticipada():
     res = asistencia.por_agente(det)
     assert res.loc[0, "Total min antes"] == 90.0   # 60 + 30
     assert res.loc[0, "Prom. min antes"] == 45.0
+
+
+# --- "Salida" en una jornada en curso -------------------------------------
+
+def test_en_jornada_en_curso_no_se_publica_hora_de_salida():
+    """El logout de agent_7 no es una desconexion. Medido contra la operacion
+    real: con todos activos venia agrupado al segundo (marca del informe,
+    avanzando sola) y con tres en almuerzo venia disperso (se congela al
+    entrar en auxiliar). No se puede distinguir "se fue" de "esta almorzando",
+    asi que no se publica hora."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 10:20:33"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:05:00", "logout": "2026-08-10 10:20:27"},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10)).set_index("Agente")
+    for quien in ("Ana", "Beto"):
+        assert det.loc[quien, "En jornada"]
+        assert det.loc[quien, "Salida"] == ""
+
+
+def test_un_logout_viejo_en_jornada_tampoco_se_publica():
+    """Beto lleva desde las 09:15 sin señal: puede haberse ido o llevar hora y
+    media en auxiliar. Desde un solo informe no se distingue, y adivinar es
+    peor que callar."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 10:20:33"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:05:00", "logout": "2026-08-10 09:15:00"},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10)).set_index("Agente")
+    assert det.loc["Beto", "En jornada"]
+    assert det.loc["Beto", "Salida"] == ""
+
+
+def test_en_un_dia_cerrado_la_salida_es_la_salida():
+    """Ahi el campo ya dejo de moverse: esa hora si es la salida real."""
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
+    det = asistencia.detalle(df, HORARIOS, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 12))
+    assert not det.loc[0, "En jornada"]
+    assert det.loc[0, "Salida"] == "18:00:00"

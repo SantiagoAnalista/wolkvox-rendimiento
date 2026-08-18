@@ -162,6 +162,7 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 "Entró tarde": tarde,
                 "Salió temprano": temprano,
                 "Sin conexión": False,
+                "En jornada": False,        # se resuelve abajo, con todo el día a la vista
                 "Estado": " y ".join(etiquetas) if etiquetas else "OK",
             })
             dia += timedelta(days=1)
@@ -173,7 +174,34 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
         # lanzaría KeyError.
         return pd.DataFrame()
 
-    return pd.DataFrame(filas).sort_values(["Agente", "Fecha"]).reset_index(drop=True)
+    return _marcar_en_jornada(pd.DataFrame(filas), hoy) \
+        .sort_values(["Agente", "Fecha"]).reset_index(drop=True)
+
+
+def _marcar_en_jornada(det: pd.DataFrame, hoy: date) -> pd.DataFrame:
+    """En una jornada en curso no se publica hora de salida. No se puede.
+
+    El `logout` de agent_7 no es una desconexión, y encima significa dos cosas
+    distintas según el momento. Medido contra la operación real:
+
+        09:33  todos activos     logouts 09:20:20 .. 09:20:33  (agrupados al
+                                 segundo: es la marca del informe, avanzando
+                                 sola mientras nadie se movía)
+        13:54  tres en almuerzo  logouts 13:01:36 .. 13:29:06  (dispersos:
+                                 el campo se congela al entrar en auxiliar)
+
+    O sea que un logout viejo puede ser "se fue a las 13:01" o "lleva desde
+    las 13:01 almorzando", y desde un solo informe no hay forma de saberlo.
+    Publicarlo como Salida dice que alguien se marchó cuando está en su
+    puesto, que es justo el error que se reportó.
+
+    Se resuelve no adivinando: durante el día en curso, quien tiene login está
+    EN JORNADA y su columna de salida va vacía. La salida real la da el
+    informe del día cerrado, cuando ese campo ya dejó de moverse.
+    """
+    det["En jornada"] = (det["Fecha"] == hoy.isoformat()) & (~det["Sin conexión"])
+    det.loc[det["En jornada"], "Salida"] = ""
+    return det
 
 
 def por_agente(det: pd.DataFrame, minimo_dias: int = 0) -> pd.DataFrame:
