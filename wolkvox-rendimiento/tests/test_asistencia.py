@@ -295,3 +295,79 @@ def test_en_un_dia_cerrado_la_salida_es_la_salida():
                              hoy=date(2026, 8, 12))
     assert not det.loc[0, "En jornada"]
     assert det.loc[0, "Salida"] == "18:00:00"
+
+
+# --- agent_8: quien sigue conectado y desde cuando no ----------------------
+
+def _hora(filas):
+    """agent_8 ya traducido: agent_name, hora, login_time_seg."""
+    return pd.DataFrame(filas)
+
+
+def test_quien_se_queda_atras_del_equipo_se_marca_desconectado():
+    """Beto dejo de aparecer a las 13:29 mientras Ana seguia hasta las 15:xx.
+    Es el caso que importa: uno se va y el resto sigue."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 15:40:00"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 13:29:00"},
+    ])
+    hora = _hora([
+        {"agent_name": "Ana", "hora": 14, "login_time_seg": 3600},
+        {"agent_name": "Ana", "hora": 15, "login_time_seg": 40 * 60},
+        {"agent_name": "Beto", "hora": 13, "login_time_seg": 29 * 60},
+        {"agent_name": "Beto", "hora": 14, "login_time_seg": 0},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
+    assert det.loc["Ana", "En jornada"]
+    assert not det.loc["Beto", "En jornada"]
+    assert det.loc["Beto", "Sin conexión desde"] == "13:29"
+
+
+def test_en_la_frontera_del_informe_se_da_por_conectado():
+    """"Sigue conectado" y "acaba de irse" son identicos ahi: los dos son
+    actividad hasta T y nada despues. Se prefiere no acusar de irse a quien
+    quiza solo esta al borde del informe; el corte siguiente lo resuelve."""
+    horarios = {**HORARIOS, "agentes": ["ANA", "BETO"]}
+    df = _logueo([
+        {"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 13:29:00"},
+        {"agent_id": "2", "agent_name": "Beto", "fecha": "2026-08-10",
+         "login": "2026-08-10 08:00:00", "logout": "2026-08-10 13:25:00"},
+    ])
+    hora = _hora([
+        {"agent_name": "Ana", "hora": 13, "login_time_seg": 29 * 60},
+        {"agent_name": "Beto", "hora": 13, "login_time_seg": 25 * 60},
+    ])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
+    assert det.loc["Ana", "En jornada"]
+    assert det.loc["Beto", "En jornada"]     # 4 min de diferencia: es ruido del informe
+
+
+def test_sin_agent_8_nadie_queda_marcado_como_desconectado():
+    """Si esa fuente falla, se degrada a 'en jornada' sin inventar horas."""
+    horarios = {**HORARIOS, "agentes": ["ANA"]}
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 13:29:00"}])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=pd.DataFrame())
+    assert det.loc[0, "En jornada"]
+    assert det.loc[0, "Sin conexión desde"] == ""
+    assert det.loc[0, "Salida"] == ""
+
+
+def test_en_un_dia_cerrado_agent_8_no_cambia_nada():
+    """Ahi la salida real ya la da agent_7 y no hay nada que resolver."""
+    horarios = {**HORARIOS, "agentes": ["ANA"]}
+    df = _logueo([{"agent_id": "1", "agent_name": "Ana", "fecha": "2026-08-10",
+                   "login": "2026-08-10 08:00:00", "logout": "2026-08-10 18:00:00"}])
+    hora = _hora([{"agent_name": "Ana", "hora": 13, "login_time_seg": 29 * 60}])
+    det = asistencia.detalle(df, horarios, date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 12), df_hora=hora)
+    assert not det.loc[0, "En jornada"]
+    assert det.loc[0, "Sin conexión desde"] == ""
+    assert det.loc[0, "Salida"] == "18:00:00"

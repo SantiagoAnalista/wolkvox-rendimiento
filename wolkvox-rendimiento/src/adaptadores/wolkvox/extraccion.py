@@ -78,6 +78,16 @@ def agente_dia(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> lis
     return client.consultar("reports_manager.php", {"api": "agent_1", **_rango(dt_ini, dt_fin)})
 
 
+def agente_hora(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> list[dict]:
+    """reports_manager.php?api=agent_8 — tiempos por agente, hora a hora.
+
+    Es lo que permite saber a qué hora dejó de estar conectado alguien, cosa
+    que agent_7 no distingue. Devuelve las 24 horas del día, con ceros en las
+    que no hubo actividad.
+    """
+    return client.consultar("reports_manager.php", {"api": "agent_8", **_rango(dt_ini, dt_fin)})
+
+
 def llamadas_detalle(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime,
                       bloque_horas: int = 6) -> list[dict]:
     """reports_manager.php?api=cdr_1 — detalle de llamadas conectadas/tipificadas."""

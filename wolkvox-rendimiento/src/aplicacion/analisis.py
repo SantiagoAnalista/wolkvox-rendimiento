@@ -44,7 +44,7 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
     log.info("Rango partido en %d %s(s): %s", len(tramos), periodo, [t[0] for t in tramos])
 
     acumulado: dict[str, list[pd.DataFrame]] = {
-        "logueo": [], "agente": [], "auxiliar": [], "auxiliar_dia": [],
+        "logueo": [], "agente": [], "agente_hora": [], "auxiliar": [], "auxiliar_dia": [],
         "llamadas": [], "chats_prod": [], "chats": []}
 
     with WolkvoxClient(cfg.servidor, cfg.token, cfg.timeout_seg, cfg.reintentos) as api:
@@ -57,6 +57,10 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
                 "logueo": (lambda: extraccion.logueo_por_dia(api, ini, fin), traduccion.logueo_por_dia),
                 "agente": (lambda: extraccion.agente_dia(api, ini, fin),
                            lambda r: traduccion.agente_dia(r, etiqueta)),
+                # Solo hace falta en una jornada en curso: es lo que distingue
+                # "sigue conectado" de "se fue a las 13:29".
+                "agente_hora": (lambda: extraccion.agente_hora(api, ini, fin),
+                                lambda r: traduccion.agente_hora(r, etiqueta)),
                 "auxiliar": (lambda: extraccion.tiempo_auxiliar(api, ini, fin), traduccion.tiempo_auxiliar),
                 "auxiliar_dia": (lambda: extraccion.tiempo_auxiliar_por_dia(api, ini, fin),
                                  traduccion.tiempo_auxiliar),
@@ -112,7 +116,8 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
     del_periodo = {k: (v[v["Periodo"] == etiqueta] if not v.empty and "Periodo" in v.columns else v)
                    for k, v in dfs.items()}
 
-    detalle = asistencia.detalle(del_periodo["logueo"], horarios, desde, hasta)
+    detalle = asistencia.detalle(del_periodo["logueo"], horarios, desde, hasta,
+                                 df_hora=del_periodo.get("agente_hora"))
     if detalle.empty:
         log.warning("%s: sin días laborales para los asesores del informe "
                     "(festivo, domingo o descanso general). Se omite.", etiqueta)
@@ -181,7 +186,7 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
     return destino
 
 
-FUENTES_ANALISIS = ["logueo", "agente", "auxiliar", "auxiliar_dia",
+FUENTES_ANALISIS = ["logueo", "agente", "agente_hora", "auxiliar", "auxiliar_dia",
                     "llamadas", "chats_prod", "chats", "codigos"]
 
 

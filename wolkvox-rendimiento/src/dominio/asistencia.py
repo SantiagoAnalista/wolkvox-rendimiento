@@ -92,8 +92,13 @@ def _sesiones(df_logueo: pd.DataFrame, incluidos: list[str]) -> pd.DataFrame:
 
 
 def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
-            hoy: date | None = None) -> pd.DataFrame:
-    """Una fila por agente y día laboral del periodo, con su evaluación."""
+            hoy: date | None = None, df_hora: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Una fila por agente y día laboral del periodo, con su evaluación.
+
+    `df_hora` es agent_8 (tiempos hora a hora) y solo se usa en una jornada en
+    curso, para saber quién sigue conectado. Sin él, todos los que tienen
+    login quedan "en jornada" y sin hora de salida.
+    """
     hoy = hoy or date.today()
 
     incluidos = horarios.get("agentes") or []
@@ -137,7 +142,8 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 filas.append({**base, "Entrada": "", "Salida": "", "Logueado": "",
                               "Min tarde": None, "Min antes": None,
                               "Entró tarde": False, "Salió temprano": False,
-                              "Sin conexión": True, "Estado": "Sin conexión"})
+                              "Sin conexión": True, "En jornada": False,
+                              "Sin conexión desde": "", "Estado": "Sin conexión"})
                 dia += timedelta(days=1)
                 continue
 
@@ -162,7 +168,8 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
                 "Entró tarde": tarde,
                 "Salió temprano": temprano,
                 "Sin conexión": False,
-                "En jornada": False,        # se resuelve abajo, con todo el día a la vista
+                "En jornada": False,        # se resuelven abajo, con el día a la vista
+                "Sin conexión desde": "",
                 "Estado": " y ".join(etiquetas) if etiquetas else "OK",
             })
             dia += timedelta(days=1)
@@ -174,33 +181,72 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
         # lanzaría KeyError.
         return pd.DataFrame()
 
-    return _marcar_en_jornada(pd.DataFrame(filas), hoy) \
+    return _marcar_conexion(pd.DataFrame(filas), hoy, df_hora) \
         .sort_values(["Agente", "Fecha"]).reset_index(drop=True)
 
 
-def _marcar_en_jornada(det: pd.DataFrame, hoy: date) -> pd.DataFrame:
-    """En una jornada en curso no se publica hora de salida. No se puede.
+# Cuánto puede quedarse atrás un asesor respecto del avance del equipo antes
+# de darlo por desconectado. El informe se reconstruye cada ~10 min, así que
+# por debajo de eso la diferencia es ruido del propio informe, no una ausencia.
+MARGEN_FRONTERA_MIN = 12
 
-    El `logout` de agent_7 no es una desconexión, y encima significa dos cosas
-    distintas según el momento. Medido contra la operación real:
 
-        09:33  todos activos     logouts 09:20:20 .. 09:20:33  (agrupados al
-                                 segundo: es la marca del informe, avanzando
-                                 sola mientras nadie se movía)
-        13:54  tres en almuerzo  logouts 13:01:36 .. 13:29:06  (dispersos:
-                                 el campo se congela al entrar en auxiliar)
+def _minuto_final(df_hora: pd.DataFrame) -> pd.Series:
+    """Agente -> último minuto del día con conexión registrada.
 
-    O sea que un logout viejo puede ser "se fue a las 13:01" o "lleva desde
-    las 13:01 almorzando", y desde un solo informe no hay forma de saberlo.
-    Publicarlo como Salida dice que alguien se marchó cuando está en su
-    puesto, que es justo el error que se reportó.
+    De agent_8: la última hora con tiempo logueado, más los minutos que
+    acumuló dentro de ella. Con 29 minutos en la franja de las 13:00, el
+    asesor estuvo conectado hasta las 13:29.
+    """
+    activas = df_hora[df_hora["login_time_seg"] > 0]
+    if activas.empty:
+        return pd.Series(dtype=float)
+    ultima = activas.loc[activas.groupby("agent_name")["hora"].idxmax()]
+    return (ultima["hora"] * 60 + ultima["login_time_seg"] / 60) \
+        .set_axis(ultima["agent_name"].map(normalizar))
 
-    Se resuelve no adivinando: durante el día en curso, quien tiene login está
-    EN JORNADA y su columna de salida va vacía. La salida real la da el
-    informe del día cerrado, cuando ese campo ya dejó de moverse.
+
+def _marcar_conexion(det: pd.DataFrame, hoy: date, df_hora: pd.DataFrame | None) -> pd.DataFrame:
+    """Resuelve, en una jornada en curso, quién sigue conectado y desde cuándo no.
+
+    El `logout` de agent_7 no sirve para esto: unas veces es la marca del
+    informe avanzando sola (09:33, todos activos, logouts agrupados en
+    09:20:2x) y otras una desconexión real (13:54, logouts dispersos entre
+    13:01 y 13:29). Desde un solo informe no se distinguen, y publicarlo como
+    salida dice que alguien se marchó estando en su puesto.
+
+    agent_8 sí lo resuelve, comparando contra el equipo. En la FRONTERA del
+    informe "sigue conectado" y "acaba de irse" son idénticos —los dos son
+    actividad hasta T y nada después—, así que la referencia es hasta dónde
+    llegó el que más avanzó: quien se queda `MARGEN_FRONTERA_MIN` por detrás
+    se desconectó, y se sabe a qué minuto.
+
+    Su límite, a propósito: si TODO el equipo sale a la vez, el último en irse
+    marca la frontera y aparece "en jornada" hasta el corte siguiente. En el
+    caso que importa —uno se va y el resto sigue— se detecta enseguida, porque
+    la frontera sigue avanzando sin él.
     """
     det["En jornada"] = (det["Fecha"] == hoy.isoformat()) & (~det["Sin conexión"])
+    det["Sin conexión desde"] = ""
+    if not det["En jornada"].any():
+        return det
+
+    # Sin agent_8 no se adivina: se deja "en jornada" y sin hora de salida.
     det.loc[det["En jornada"], "Salida"] = ""
+    if df_hora is None or df_hora.empty:
+        return det
+
+    finales = _minuto_final(df_hora)
+    if finales.empty:
+        return det
+    frontera = finales.max()
+
+    for i in det.index[det["En jornada"]]:
+        suyo = finales.get(normalizar(det.at[i, "Agente"]))
+        if suyo is None or frontera - suyo <= MARGEN_FRONTERA_MIN:
+            continue
+        det.at[i, "En jornada"] = False
+        det.at[i, "Sin conexión desde"] = f"{int(suyo) // 60:02d}:{int(suyo) % 60:02d}"
     return det
 
 

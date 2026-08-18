@@ -163,6 +163,7 @@ punto de cambio es `src/adaptadores/almacen/respaldo.py`, sin tocar el resto.
 | `reports_manager.php?api=agent_1` | Resumen de tiempos por agente en la ventana |
 | `reports_manager.php?api=agent_3` | Tiempo auxiliar desglosado por tipo de pausa |
 | `reports_manager.php?api=agent_7` | Login/logout por agente y día (base de la puntualidad) |
+| `reports_manager.php?api=agent_8` | Tiempos por agente **hora a hora**: quién sigue conectado |
 | `reports_manager.php?api=cdr_1` | Detalle de llamadas conectadas/tipificadas |
 | `reports_manager.php?api=chat_1` | Detalle de conversaciones (WhatsApp/chat) |
 | `reports_manager.php?api=chat_16` | Productividad digital por agente |
@@ -170,6 +171,13 @@ punto de cambio es `src/adaptadores/almacen/respaldo.py`, sin tocar el resto.
 
 La efectividad sale de `activity_codes`, no de un mapeo mantenido a mano: son
 las banderas que la propia operación ya configuró en Wolkvox.
+
+**Por qué hacen falta agent_7 y agent_8 a la vez.** El campo `logout` de
+agent_7 no es una desconexión: unas veces es la marca del informe avanzando
+sola (medido: todos activos, logouts agrupados en `09:20:2x`) y otras una
+salida real (`13:01`, `13:14`, `13:25`, `13:29`, contrastadas y correctas).
+Desde un solo informe no se distinguen. agent_8 sí lo resuelve, porque dice
+cuántos minutos estuvo conectado cada asesor en cada franja horaria.
 
 
 ## Informe de análisis de gestión

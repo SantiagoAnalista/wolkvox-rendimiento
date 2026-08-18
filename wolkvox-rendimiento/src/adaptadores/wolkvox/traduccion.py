@@ -106,6 +106,27 @@ def agente_dia(registros: list[dict], fecha: str) -> pd.DataFrame:
     return df
 
 
+def agente_hora(registros: list[dict], fecha: str) -> pd.DataFrame:
+    """agent_8 — los mismos indicadores, desglosados hora a hora.
+
+    Es el único endpoint que dice si un asesor estuvo conectado en una franja
+    concreta. agent_7 no sirve para eso: su campo `logout` unas veces es la
+    marca del informe avanzando sola y otras una desconexión real, y desde un
+    solo informe no se distinguen.
+
+    `hour` llega como 'HH:MM' ('13:00'), no como número.
+    """
+    cols = ["agent_id", "agent_name", "agent_dni", "date", "hour",
+            *CONTEOS, *TIEMPOS, "occupancy"]
+    df = _enteros(_segundos(_df(registros, cols)))
+    if df.empty:
+        return df
+    df["fecha"] = df["date"].replace("", pd.NA).fillna(fecha)
+    df["hora"] = (df["hour"].astype(str).str.slice(0, 2)
+                    .pipe(pd.to_numeric, errors="coerce").fillna(0).astype(int))
+    return df
+
+
 def llamadas(registros: list[dict]) -> pd.DataFrame:
     """cdr_1 — llamadas conectadas, con la fecha partida en fecha y hora.
 
