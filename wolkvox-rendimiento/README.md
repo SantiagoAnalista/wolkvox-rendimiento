@@ -90,7 +90,9 @@ wolkvox-rendimiento/
 └── logs/
 ```
 
-El repositorio contiene solo esta carpeta: no hay nada suelto en la raíz.
+En la raíz del repositorio solo queda esta carpeta y el `.gitignore`, que vive
+ahí porque desde ahí alcanza todo —incluido `.claude/`, que está fuera del
+proyecto—. Por eso sus rutas llevan el prefijo `wolkvox-rendimiento/`.
 
 `config/paths.py` define `ROOT_DIR` una sola vez; el resto del proyecto lo
 importa desde ahí en vez de recalcular rutas relativas por su cuenta.
@@ -102,7 +104,7 @@ importa desde ahí en vez de recalcular rutas relativas por su cuenta.
    Integraciones → Tokens).
 2. `pip install -r requirements.txt`
 3. Copiar los cronogramas de la operación a `src/data/`: no se versionan, el
-   `.gitignore` los excluye junto con los respaldos.
+   `.gitignore` de la raíz los excluye junto con los respaldos.
 4. `python main.py --analisis --periodo semana`
 
 ## Uso
