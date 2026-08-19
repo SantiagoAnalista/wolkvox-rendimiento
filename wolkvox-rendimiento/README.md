@@ -208,6 +208,13 @@ asesor se calcula sobre los valores ya redondeados para que la fila cuadre.
 agrega todo el rango consultado, esa vista se extrae consultando un día a la
 vez: son ~25 consumos extra por mes, irrelevantes frente a la cuota diaria.
 
+`agent_1` se consulta dos veces por la misma razón: una vez por el rango
+completo, para el informe del periodo, y otra día a día, para que el filtro
+por fecha del tablero dé exactamente las cifras del informe de ese día. No
+basta con desglosar `agent_8`: su ocupación no es reconstruible desde las
+horas porque Wolkvox la calcula con otro denominador, y daba 63,6 % donde el
+informe diario decía 67,4 %.
+
 ### Horarios reales (`horarios.yaml` + Excel de la operación)
 
 Los horarios se leen de los cronogramas de la operación
@@ -437,14 +444,14 @@ de CDR se parten para no chocar contra el límite de 60.000 registros.
 | Jornada 6am-9pm, 1 corrida por hora (16 corridas) | 134 /día |
 | Reconciliación nocturna (3 días completos) | 33 /día |
 | **Total del reporte diario** | **167 /día** |
-| Informe de gestión — modo `mes` | ~40 por mes procesado |
-| Informe de gestión — modo `semana` | ~15 por semana |
-| Informe de gestión — modo `dia` | ~9 por día |
+| Informe de gestión — modo `mes` | ~70 por mes procesado |
+| Informe de gestión — modo `semana` | ~22 por semana |
+| Informe de gestión — modo `dia` | ~10 por día |
 
 Los tres jobs programados juntos consumen menos de 100 tokens al día sobre
-una cuota de 8.000. El grueso del modo `mes` es la extracción día a día de
-auxiliares (~25 consumos), que es lo que alimenta la hoja `Auxiliares día a
-día`.
+una cuota de 8.000. El grueso del modo `mes` son las dos extracciones día a
+día —auxiliares y `agent_1`, ~25 consumos cada una—, que alimentan la hoja
+`Auxiliares día a día` y el filtro por fecha del tablero.
 
 Con `BLOQUE_HORAS=6` el pipeline usa **~2 % de una cuota de 8.000**. Bajar el
 bloque sube el consumo pero sigue siendo marginal: `=3` → 259/día, `=2` →
