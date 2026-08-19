@@ -128,9 +128,9 @@ cambia es la ventana que agregan y el nombre del archivo:
 
 | Modo | Archivo | Umbral de asesor activo |
 |---|---|---|
-| `mes` | `analisis_gestion_2026-07.xlsx` | 5 días trabajados |
-| `semana` | `analisis_gestion_2026-S31.xlsx` | 2 días |
-| `dia` | `analisis_gestion_2026-08-12.xlsx` | 1 día |
+| `mes` | `gestion_wolkbox_2026-07.xlsx` | 5 días trabajados |
+| `semana` | `gestion_wolkbox_2026-S31.xlsx` | 2 días |
+| `dia` | `gestion_wolkbox_2026-08-12.xlsx` | 1 día |
 
 El umbral se define por modo en `horarios.yaml`: exigir 5 días en un informe
 diario dejaría a todos fuera de los promedios generales.
@@ -191,7 +191,7 @@ conectados en estados de gestión con poca efectividad.
 python main.py --analisis --desde 2026-07-01 --hasta 2026-08-12
 ```
 
-Genera **un Excel por mes** (`analisis_gestion_2026-07.xlsx`, `…-08.xlsx`) con
+Genera **un Excel por mes** (`gestion_wolkbox_2026-07.xlsx`, `…-08.xlsx`) con
 índice navegable y una hoja por tema: **Resumen general**, **Resumen por
 agente** (incluye el desglose de auxiliares), **Puntualidad agente**,
 **Puntualidad detalle** (día por día), **Tiempos por agente**, **Auxiliares
@@ -314,10 +314,10 @@ ocho corridas al día y coordinación consultando el detalle, eso pasa. La
 solución no es manejar el error sino que la colisión no pueda ocurrir:
 
 ```
-analisis_gestion_2026-08-17_0810.xlsx
-analisis_gestion_2026-08-17_1210.xlsx
-analisis_gestion_2026-08-17_1610.xlsx   <- el corte actual
-analisis_gestion_2026-08-16.xlsx        <- ayer, consolidado
+gestion_wolkbox_2026-08-17_0810.xlsx
+gestion_wolkbox_2026-08-17_1210.xlsx
+gestion_wolkbox_2026-08-17_1610.xlsx   <- el corte actual
+gestion_wolkbox_2026-08-16.xlsx        <- ayer, consolidado
 ```
 
 Nadie puede tener abierto un archivo que hace un segundo no existía. El tablero
@@ -374,7 +374,7 @@ en días. El formato `MM. Mes` está tomado de la propia carpeta.
 En el destino queda **una sola versión de cada periodo**: antes de copiar se
 borran los archivos de ese mismo periodo, cortes intradía incluidos. Los de
 otros periodos no se tocan — la comparación es por expresión regular sobre la
-etiqueta completa, porque el comodín `analisis_gestion_2026-08*` casaría
+etiqueta completa, porque el comodín `gestion_wolkbox_2026-08*` casaría
 también con `2026-08-18_1431` y el informe mensual borraría los diarios.
 
 ## Despliegue en Jenkins

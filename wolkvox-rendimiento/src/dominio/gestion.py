@@ -144,14 +144,14 @@ def auxiliares_por_tipo(df_aux: pd.DataFrame) -> pd.DataFrame:
 COLUMNAS_CURVA = ["Hora", "Agente", "Llamadas", "Digitales"]
 
 
-def _conteo_horario(df: pd.DataFrame, etiqueta: str) -> pd.DataFrame:
+def _conteo_horario(df: pd.DataFrame, etiqueta: str, columna: str = "hora") -> pd.DataFrame:
     """Cuenta registros por hora del día y agente."""
-    if df.empty or not {"hora", "agent_name"} <= set(df.columns):
+    if df.empty or not {columna, "agent_name"} <= set(df.columns):
         return pd.DataFrame(columns=["Hora", "Agente", etiqueta])
 
-    tabla = (df.groupby(["hora", "agent_name"], as_index=False)
+    tabla = (df.groupby([columna, "agent_name"], as_index=False)
                .size()
-               .rename(columns={"hora": "Hora", "agent_name": "Agente", "size": etiqueta}))
+               .rename(columns={columna: "Hora", "agent_name": "Agente", "size": etiqueta}))
     tabla["Hora"] = pd.to_numeric(tabla["Hora"], errors="coerce").fillna(0).astype(int)
     return tabla
 
@@ -160,20 +160,22 @@ def curva_horaria(df_llamadas: pd.DataFrame,
                   df_chats: pd.DataFrame | None = None) -> pd.DataFrame:
     """Gestiones por hora del día y agente, separadas por canal.
 
-    ⚠️ Las dos columnas NO significan lo mismo, y el tablero lo rotula así:
+    ⚠️ Las dos columnas se miden en momentos distintos, y el tablero lo
+    rotula así:
 
-    - `Llamadas` (cdr_1) se fecha en el momento de la llamada, así que la
-      hora dice cuándo se gestionó.
-    - `Digitales` (chat_1) se fecha por la APERTURA de la conversación, y una
-      de WhatsApp puede seguir viva 23 horas. La hora dice cuándo ENTRÓ, no
-      cuándo se trabajó.
+    - `Llamadas` (cdr_1) se fecha en el momento de la llamada.
+    - `Digitales` (chat_1) se cuenta por su hora de CIERRE, no de apertura.
 
-    Mezclarlas en una sola serie diría algo falso; separadas responden dos
-    preguntas legítimas: en qué franjas se marca, y a qué horas entra el
-    tráfico digital.
+    La apertura no sirve: chat_1 filtra la consulta por la fecha de cierre,
+    así que pedir "hoy hasta las 08:45" devuelve conversaciones abiertas ayer
+    —comprobado: las 54 del 19/08 se abrieron el 18— y contarlas por su hora
+    de apertura dibujaba barras a las 14:00 en un corte de las 08:45. El
+    cierre es la única marca garantizada dentro de la ventana, y además es
+    cuando el asesor tipificó: cuándo se trabajó, no cuándo entró.
     """
     voz = _conteo_horario(df_llamadas, "Llamadas")
-    digital = _conteo_horario(df_chats if df_chats is not None else pd.DataFrame(), "Digitales")
+    digital = _conteo_horario(df_chats if df_chats is not None else pd.DataFrame(),
+                              "Digitales", columna="hora_cierre")
 
     if voz.empty and digital.empty:
         return pd.DataFrame(columns=COLUMNAS_CURVA)

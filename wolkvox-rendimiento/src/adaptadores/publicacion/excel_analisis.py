@@ -40,6 +40,10 @@ HOJAS = [
 ]
 
 
+# Prefijo de todo informe publicado. Una sola definición: la usan la
+# retención local, la publicación en red y sus expresiones regulares.
+PREFIJO = "gestion_wolkbox"
+
 def _escribir_tabla(ws, df: pd.DataFrame, fila_inicio: int = 1, filtro: bool = True) -> int:
     """Escribe el DataFrame con encabezado y devuelve la última fila usada."""
     if df.empty:
@@ -141,7 +145,7 @@ def _hoja_indice(wb, metadatos: dict):
 
 
 def generar(cuadros: dict[str, pd.DataFrame], metadatos: dict, ruta_salida: Path,
-            nombre: str = "analisis_gestion") -> Path:
+            nombre: str = PREFIJO) -> Path:
     wb = Workbook()
     wb.remove(wb.active)
     _hoja_indice(wb, metadatos)

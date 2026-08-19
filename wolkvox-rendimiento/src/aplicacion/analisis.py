@@ -173,7 +173,7 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
     # alguien tiene abierto no se puede reemplazar en Windows, y así la
     # colisión no puede darse. excel_purga los consolida al cerrar la jornada.
     nombre = (retencion.nombre_corte(desde, hora_corte) if hora_corte
-              else f"analisis_gestion_{etiqueta}")
+              else f"{excel_analisis.PREFIJO}_{etiqueta}")
     destino = excel_analisis.generar(cuadros, metadatos, cfg.ruta_salida, nombre=nombre)
 
     # El tablero se alimenta de los MISMOS cuadros, sin recalcular. Aquí solo

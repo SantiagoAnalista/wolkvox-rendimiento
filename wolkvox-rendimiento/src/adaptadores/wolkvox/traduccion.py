@@ -204,6 +204,12 @@ def chats_detalle(registros: list[dict]) -> pd.DataFrame:
     cierra, y las que nadie tipifica se cierran por timeout a las ~23 horas.
     No es tiempo de gestión del agente: para eso está 'time_on_agent' y
     'agent_average_response_time'.
+
+    ⚠️ El endpoint filtra por la fecha de CIERRE, no por la de apertura. Al
+    pedir "hoy hasta las 08:45" devuelve conversaciones abiertas AYER que se
+    cerraron esta mañana (comprobado: las 54 del 19/08 se abrieron el 18).
+    Por eso se deriva `hora_cierre`, la única garantizada dentro de la
+    ventana consultada y la que dice cuándo trabajó el asesor.
     """
     cols = ["conn_id", "channel", "date", "date_close", "agent_id", "agent_name",
             "cod_act", "description_cod_act", "skill_id", "customer_id",
@@ -211,6 +217,9 @@ def chats_detalle(registros: list[dict]) -> pd.DataFrame:
     df = _df(registros, cols)
     if df.empty:
         return df
+    cierre = pd.to_datetime(df["date_close"], errors="coerce")
+    df["fecha_cierre"] = cierre.dt.strftime("%Y-%m-%d")
+    df["hora_cierre"] = cierre.dt.hour
     df = _fecha_y_hora(df)
     df["time_on_agent_seg"] = df["time_on_agent"].map(hhmmss_a_segundos)
     df["chat_duration_seg"] = df["chat_duration"].map(hhmmss_a_segundos)

@@ -29,6 +29,8 @@ import time
 from datetime import date
 from pathlib import Path
 
+from .excel_analisis import PREFIJO
+
 log = logging.getLogger(__name__)
 
 MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -68,11 +70,11 @@ def _del_mismo_periodo(carpeta: Path, etiqueta: str) -> list[Path]:
     """Archivos ya publicados de ese periodo, incluidos los cortes intradía.
 
     Se compara con expresión regular y no con comodín a propósito: el patrón
-    `analisis_gestion_2026-08*` casaría también con `2026-08-18_1431`, y el
+    `gestion_wolkbox_2026-08*` casaría también con `2026-08-18_1431`, y el
     informe mensual borraría los diarios.
     """
-    patron = re.compile(rf"^analisis_gestion_{re.escape(etiqueta)}(_\d{{4}})?\.xlsx$")
-    return [a for a in carpeta.glob("analisis_gestion_*.xlsx")
+    patron = re.compile(rf"^{PREFIJO}_{re.escape(etiqueta)}(_\d{{4}})?\.xlsx$")
+    return [a for a in carpeta.glob(f"{PREFIJO}_*.xlsx")
             if patron.match(a.name) and not a.name.startswith("~$")]
 
 
@@ -106,7 +108,7 @@ def publicar_excel(excel: Path, etiqueta: str, plantilla: str, fecha: date,
     return destino
 
 
-DIARIO = re.compile(r"^analisis_gestion_(\d{4}-\d{2}-\d{2})(_\d{4})?\.xlsx$")
+DIARIO = re.compile(rf"^{PREFIJO}_(\d{{4}}-\d{{2}}-\d{{2}})(_\d{{4}})?\.xlsx$")
 
 
 def _purgar_diarios(carpeta: Path, maximo: int, conservar: Path) -> list[Path]:
@@ -117,7 +119,7 @@ def _purgar_diarios(carpeta: Path, maximo: int, conservar: Path) -> list[Path]:
     fuera el más nuevo. Los semanales y mensuales ni se miran.
     """
     por_fecha: dict[str, list[Path]] = {}
-    for archivo in carpeta.glob("analisis_gestion_*.xlsx"):
+    for archivo in carpeta.glob(f"{PREFIJO}_*.xlsx"):
         m = DIARIO.match(archivo.name)
         if m and not archivo.name.startswith("~$"):
             por_fecha.setdefault(m.group(1), []).append(archivo)

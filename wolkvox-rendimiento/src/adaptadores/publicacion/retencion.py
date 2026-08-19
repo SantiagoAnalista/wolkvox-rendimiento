@@ -1,7 +1,7 @@
 """Limpieza de las maestras diarias.
 
 Cada corrida intradía escribe un Excel NUEVO con la hora del corte
-(`analisis_gestion_2026-08-17_1210.xlsx`) en vez de sobrescribir el anterior.
+(`gestion_wolkbox_2026-08-17_1210.xlsx`) en vez de sobrescribir el anterior.
 Es deliberado: en Windows, un `.xlsx` abierto por alguien queda tomado y
 `wb.save()` falla con PermissionError. Escribiendo un archivo que hace un
 segundo no existía, la colisión no puede ocurrir — no se maneja el error, se
@@ -30,24 +30,26 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 
+from .excel_analisis import PREFIJO
+
 log = logging.getLogger(__name__)
 
-# analisis_gestion_2026-08-17.xlsx        -> consolidado del día
-# analisis_gestion_2026-08-17_1210.xlsx   -> corte de las 12:10
+# gestion_wolkbox_2026-08-17.xlsx        -> consolidado del día
+# gestion_wolkbox_2026-08-17_1210.xlsx   -> corte de las 12:10
 # No casa los informes de semana (2026-S33) ni de mes (2026-08): esos no
 # se generan varias veces al día y no entran en esta limpieza.
-DIARIO = re.compile(r"^analisis_gestion_(\d{4}-\d{2}-\d{2})(?:_(\d{2})(\d{2}))?\.xlsx$")
+DIARIO = re.compile(rf"^{PREFIJO}_(\d{{4}}-\d{{2}}-\d{{2}})(?:_(\d{{2}})(\d{{2}}))?\.xlsx$")
 
 
 def nombre_corte(fecha: date, hora: str) -> str:
-    """'2026-08-17' + '12:10' -> 'analisis_gestion_2026-08-17_1210'."""
-    return f"analisis_gestion_{fecha.isoformat()}_{hora.replace(':', '')}"
+    """'2026-08-17' + '12:10' -> 'gestion_wolkbox_2026-08-17_1210'."""
+    return f"{PREFIJO}_{fecha.isoformat()}_{hora.replace(':', '')}"
 
 
 def _diarios(ruta: Path) -> dict[str, list[tuple[int | None, Path]]]:
     """fecha -> [(minuto del día o None si es el consolidado, ruta)]."""
     encontrados: dict[str, list[tuple[int | None, Path]]] = {}
-    for archivo in ruta.glob("analisis_gestion_*.xlsx"):
+    for archivo in ruta.glob(f"{PREFIJO}_*.xlsx"):
         if archivo.name.startswith("~$"):
             continue                      # archivo de bloqueo de Excel
         m = DIARIO.match(archivo.name)
@@ -139,5 +141,5 @@ def vigentes(ruta: Path) -> set[str]:
     """
     if not ruta.exists():
         return set()
-    return {a.name for a in ruta.glob("analisis_gestion_*.xlsx")
+    return {a.name for a in ruta.glob(f"{PREFIJO}_*.xlsx")
             if not a.name.startswith("~$")}

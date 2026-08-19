@@ -735,7 +735,7 @@ function chartAuxiliares(aux, nomina = []) {
 /* ══ Curva horaria ════════════════════════════════════════════════ */
 const CANALES = [
   { k: "Llamadas",  label: "Llamadas",           color: "var(--s1)", tok: "--s1" },
-  { k: "Digitales", label: "Digitales iniciadas", color: "var(--s2)", tok: "--s2" }
+  { k: "Digitales", label: "Digitales cerradas", color: "var(--s2)", tok: "--s2" }
 ];
 
 /** Agrupa la curva por hora; con `agente`, solo la suya. */
@@ -782,7 +782,7 @@ function tablaCurva(curva, nomina) {
     const tv = filas.reduce((a, o) => a + o.Llamadas, 0);
     const td = filas.reduce((a, o) => a + o.Digitales, 0);
     cont.innerHTML = `<div class="tw"><table><thead><tr>` +
-      `<th>Hora</th><th>Llamadas</th><th>Digitales iniciadas</th><th>Total</th>` +
+      `<th>Hora</th><th>Llamadas</th><th>Digitales cerradas</th><th>Total</th>` +
       `</tr></thead><tbody>` +
       filas.map(o => `<tr><td>${String(o.hora).padStart(2, "0")}:00</td>` +
         `<td>${o.Llamadas}</td><td>${o.Digitales}</td><td>${o.Llamadas + o.Digitales}</td></tr>`).join("") +
@@ -797,9 +797,9 @@ function tablaCurva(curva, nomina) {
 
 function chartCurva(curva, nomina = []) {
   const c = card("half", "Gestiones por hora",
-    "Voz y digital en paralelo. Ojo con la diferencia: la llamada se fecha cuando ocurre, " +
-    "pero la conversación digital se fecha cuando se abre y puede seguir viva horas. " +
-    "La barra naranja dice cuándo ENTRÓ el tráfico, no cuándo se trabajó.");
+    "Voz y digital en paralelo. La llamada se cuenta cuando ocurre; la conversación " +
+    "digital, cuando se cierra —que es cuando el asesor la tipificó—. Contarla por su " +
+    "apertura mezclaría días: Wolkvox devuelve conversaciones de ayer que cerraron hoy.");
   if (!curva.length) { c.appendChild(vacio("Sin gestiones registradas en el día.")); return c; }
   c.appendChild(legend(CANALES));
 
@@ -841,7 +841,7 @@ function chartCurva(curva, nomina = []) {
       .join("");
     hover(g, `<div class="t-h">${String(r.hora).padStart(2, "0")}:00 – ${String(r.hora + 1).padStart(2, "0")}:00</div>` +
       `<div class="t-r">Llamadas: <b>${r.Llamadas}</b></div>` +
-      `<div class="t-r">Digitales iniciadas: <b>${r.Digitales}</b></div>${det}`);
+      `<div class="t-r">Digitales cerradas: <b>${r.Digitales}</b></div>${det}`);
 
     svg("text", { x: cx, y: H - B + 16, "text-anchor": "middle", ...AX }, s)
       .textContent = String(r.hora).padStart(2, "0");
