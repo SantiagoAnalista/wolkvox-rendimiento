@@ -76,8 +76,14 @@ def _del_mismo_periodo(carpeta: Path, etiqueta: str) -> list[Path]:
             if patron.match(a.name) and not a.name.startswith("~$")]
 
 
-def publicar_excel(excel: Path, etiqueta: str, plantilla: str, fecha: date) -> Path:
-    """Deja en la carpeta la única versión vigente de ese periodo."""
+def publicar_excel(excel: Path, etiqueta: str, plantilla: str, fecha: date,
+                   dias_diarios: int = 0) -> Path:
+    """Deja en la carpeta la única versión vigente de ese periodo.
+
+    `dias_diarios` limita cuántos informes DIARIOS se conservan ahí. Los
+    semanales y los mensuales no caducan: la carpeta está organizada por mes y
+    ese es justamente su archivo.
+    """
     carpeta = ruta_destino(plantilla, fecha)
     carpeta.mkdir(parents=True, exist_ok=True)
     destino = carpeta / excel.name
@@ -94,7 +100,43 @@ def publicar_excel(excel: Path, etiqueta: str, plantilla: str, fecha: date) -> P
             # sobrante es inofensivo y la siguiente corrida lo reintenta.
             log.warning("Publicación: no se pudo borrar %s (%s)", viejo.name, e)
     log.info("Publicación: %s -> %s", excel.name, carpeta)
+
+    if dias_diarios:
+        _purgar_diarios(carpeta, dias_diarios, conservar=destino)
     return destino
+
+
+DIARIO = re.compile(r"^analisis_gestion_(\d{4}-\d{2}-\d{2})(_\d{4})?\.xlsx$")
+
+
+def _purgar_diarios(carpeta: Path, maximo: int, conservar: Path) -> list[Path]:
+    """Conserva los `maximo` informes diarios más recientes de la carpeta.
+
+    Se cuentan FECHAS, no archivos, y se ordenan por la fecha del nombre y no
+    por la de modificación: reprocesar un día viejo no debe colarlo como si
+    fuera el más nuevo. Los semanales y mensuales ni se miran.
+    """
+    por_fecha: dict[str, list[Path]] = {}
+    for archivo in carpeta.glob("analisis_gestion_*.xlsx"):
+        m = DIARIO.match(archivo.name)
+        if m and not archivo.name.startswith("~$"):
+            por_fecha.setdefault(m.group(1), []).append(archivo)
+
+    sobran = sorted(por_fecha, reverse=True)[maximo:]
+    borrados = []
+    for fecha in sobran:
+        for archivo in por_fecha[fecha]:
+            if archivo == conservar:
+                continue
+            try:
+                archivo.unlink()
+                borrados.append(archivo)
+            except OSError as e:
+                log.warning("Publicación: no se pudo borrar %s (%s)", archivo.name, e)
+    if borrados:
+        log.info("Publicación: %d diario(s) fuera de los últimos %d días",
+                 len(borrados), maximo)
+    return borrados
 
 
 def publicar_tablero(tablero: Path, plantilla: str, fecha: date) -> Path:

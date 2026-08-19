@@ -152,3 +152,84 @@ def test_publicar_el_tablero_no_toca_los_excel(tmp_path):
 
     carpeta_red.publicar_tablero(nuevo, plantilla(tmp_path), date(2026, 8, 18))
     assert nombres(carpeta) == ["analisis_gestion_2026-08-18_1610.xlsx"]
+
+
+# ── Retención de los informes diarios ────────────────────────────────────
+
+def test_solo_se_conservan_los_tres_diarios_mas_recientes(tmp_path):
+    carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
+    crear(carpeta,
+          "analisis_gestion_2026-08-15.xlsx",
+          "analisis_gestion_2026-08-16.xlsx",
+          "analisis_gestion_2026-08-17.xlsx",
+          "analisis_gestion_2026-08-18.xlsx")
+    excel = tmp_path / "analisis_gestion_2026-08-19_0816.xlsx"
+    excel.write_text("nuevo", encoding="utf-8")
+
+    carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path),
+                               date(2026, 8, 19), dias_diarios=3)
+    assert nombres(carpeta) == ["analisis_gestion_2026-08-17.xlsx",
+                                "analisis_gestion_2026-08-18.xlsx",
+                                "analisis_gestion_2026-08-19_0816.xlsx"]
+
+
+def test_la_retencion_diaria_no_toca_semanales_ni_mensuales(tmp_path):
+    """La carpeta esta organizada por mes: ese es justamente su archivo."""
+    carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
+    crear(carpeta,
+          "analisis_gestion_2026-08-10.xlsx", "analisis_gestion_2026-08-11.xlsx",
+          "analisis_gestion_2026-08-12.xlsx", "analisis_gestion_2026-08-13.xlsx",
+          "analisis_gestion_2026-S32.xlsx", "analisis_gestion_2026-S33.xlsx",
+          "analisis_gestion_2026-07.xlsx")
+    excel = tmp_path / "analisis_gestion_2026-08-19_0816.xlsx"
+    excel.write_text("nuevo", encoding="utf-8")
+
+    carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path),
+                               date(2026, 8, 19), dias_diarios=3)
+    quedan = nombres(carpeta)
+    assert "analisis_gestion_2026-S32.xlsx" in quedan
+    assert "analisis_gestion_2026-S33.xlsx" in quedan
+    assert "analisis_gestion_2026-07.xlsx" in quedan
+    assert len([n for n in quedan if DIARIOS_RE.match(n)]) == 3
+
+
+DIARIOS_RE = carpeta_red.DIARIO
+
+
+def test_reprocesar_un_dia_viejo_no_desplaza_a_los_recientes(tmp_path):
+    """Se ordena por la fecha del NOMBRE, no por la de modificacion: un
+    backfill del 1 de agosto no puede echar al informe del 19.
+
+    Sobrevive esa corrida porque una ejecucion nunca borra lo que acaba de
+    escribir —crear y destruir el propio entregable es un defecto, no una
+    politica—, asi que la carpeta queda con 4 diarios hasta la siguiente
+    corrida, que ya lo purga.
+    """
+    carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
+    crear(carpeta, "analisis_gestion_2026-08-17.xlsx",
+          "analisis_gestion_2026-08-18.xlsx", "analisis_gestion_2026-08-19.xlsx")
+    excel = tmp_path / "analisis_gestion_2026-08-01.xlsx"
+    excel.write_text("backfill", encoding="utf-8")
+
+    carpeta_red.publicar_excel(excel, "2026-08-01", plantilla(tmp_path),
+                               date(2026, 8, 1), dias_diarios=3)
+    assert "analisis_gestion_2026-08-19.xlsx" in nombres(carpeta)
+
+    # La corrida siguiente lo deja en tres.
+    otro = tmp_path / "analisis_gestion_2026-08-20.xlsx"
+    otro.write_text("x", encoding="utf-8")
+    carpeta_red.publicar_excel(otro, "2026-08-20", plantilla(tmp_path),
+                               date(2026, 8, 20), dias_diarios=3)
+    assert nombres(carpeta) == ["analisis_gestion_2026-08-18.xlsx",
+                                "analisis_gestion_2026-08-19.xlsx",
+                                "analisis_gestion_2026-08-20.xlsx"]
+
+
+def test_sin_limite_configurado_no_se_purga_nada(tmp_path):
+    carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
+    crear(carpeta, "analisis_gestion_2026-08-10.xlsx", "analisis_gestion_2026-08-11.xlsx",
+          "analisis_gestion_2026-08-12.xlsx", "analisis_gestion_2026-08-13.xlsx")
+    excel = tmp_path / "analisis_gestion_2026-08-19_0816.xlsx"
+    excel.write_text("x", encoding="utf-8")
+    carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path), date(2026, 8, 19))
+    assert len(nombres(carpeta)) == 5

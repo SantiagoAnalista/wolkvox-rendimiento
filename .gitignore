@@ -12,8 +12,12 @@
 # igual, con su propio prefijo.
 
 # --- Secretos ---
+# `.env.*` cubre cualquier variante (.env.bak, .env.prod, .env.local): una
+# copia de seguridad del .env lleva el token dentro y no puede quedar suelta.
+# .env.example es la plantilla sin secretos y sí se versiona.
 .env
-.env.local
+.env.*
+!.env.example
 
 # --- Entornos virtuales y cachés de Python ---
 .venv/

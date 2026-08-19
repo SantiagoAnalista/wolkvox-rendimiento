@@ -185,7 +185,8 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         cfg.ruta_tablero)
 
     if cfg.ruta_publicacion:
-        carpeta_red.publicar_excel(destino, etiqueta, cfg.ruta_publicacion, hasta)
+        carpeta_red.publicar_excel(destino, etiqueta, cfg.ruta_publicacion, hasta,
+                                   dias_diarios=cfg.dias_excel)
     return destino
 
 
