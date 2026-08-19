@@ -414,3 +414,25 @@ def test_irse_antes_de_la_hora_si_es_una_desconexion():
                              hoy=date(2026, 8, 10), df_hora=hora).set_index("Agente")
     assert det.loc["Ana", "Estado conexión"] == asistencia.DESCONECTADO
     assert det.loc["Ana", "Sin conexión desde"] == "15:30"
+
+
+def test_el_nombre_de_la_api_gana_aunque_el_asesor_no_se_haya_logueado():
+    """Sin esto, quien todavia no tiene login se nombraba con la grafia del
+    YAML mientras el resto de cuadros usaba la de la API (espacio doble), y
+    los cruces por nombre entre cuadros fallaban en silencio: el semaforo
+    mostraba "0 de 0" dias en vez de encontrar su fila."""
+    horarios = {**HORARIOS, "agentes": ["CARDONA GARCIA MARIA"]}
+    hora = _hora([{"agent_name": "CARDONA GARCIA  MARIA", "hora": 8,
+                   "login_time_seg": 0}])
+    det = asistencia.detalle(pd.DataFrame(), horarios,
+                             date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10), df_hora=hora)
+    assert list(det["Agente"]) == ["CARDONA GARCIA  MARIA"]     # la de la API
+
+
+def test_sin_agent_8_se_usa_el_nombre_de_la_nomina():
+    horarios = {**HORARIOS, "agentes": ["CARDONA GARCIA MARIA"]}
+    det = asistencia.detalle(pd.DataFrame(), horarios,
+                             date(2026, 8, 10), date(2026, 8, 10),
+                             hoy=date(2026, 8, 10))
+    assert list(det["Agente"]) == ["CARDONA GARCIA MARIA"]

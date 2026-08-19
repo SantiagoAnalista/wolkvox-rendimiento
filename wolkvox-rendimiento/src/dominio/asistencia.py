@@ -110,6 +110,14 @@ def detalle(df_logueo: pd.DataFrame, horarios: dict, desde: date, hasta: date,
     # "todo bien" justo cuando hay algo que atender. Sin nómina configurada se
     # mantiene el comportamiento anterior (enumerar lo que traigan los datos).
     presentes = {normalizar(a): a for a in sesiones["agente"].unique()}
+    # agent_8 lista a TODOS los agentes con el nombre tal como lo escribe la
+    # API. Sin esto, un asesor que aún no se ha logueado se nombraría con la
+    # grafía del YAML mientras el resto de cuadros usa la de la API, y los
+    # cruces por nombre entre cuadros fallarían en silencio.
+    if df_hora is not None and not df_hora.empty and "agent_name" in df_hora.columns:
+        for nombre in df_hora["agent_name"].dropna().unique():
+            presentes.setdefault(normalizar(nombre), nombre)
+
     agentes = sorted(presentes.get(n, n) for n in incluidos) if incluidos \
         else sorted(presentes.values())
     if not agentes:

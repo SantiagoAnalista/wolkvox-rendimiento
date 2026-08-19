@@ -237,6 +237,24 @@ const int = v => v == null ? "—" : Math.round(v).toLocaleString("es-CO");
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+/** Identidad de un asesor, insensible a la grafía.
+ *
+ *  El mismo asesor llega escrito distinto según la fuente: cdr_1 y agent_8
+ *  usan el nombre de la API ("CARDONA GARCIA  MARIA", con espacio doble) y la
+ *  nómina el del YAML ("CARDONA GARCIA MARIA"). Cruzar por texto exacto hace
+ *  que el semáforo no encuentre su fila y muestre ceros, o que el filtro
+ *  liste dos veces a la misma persona. Es el mismo criterio que aplica
+ *  `dominio.nombres.normalizar` del lado de Python. */
+const clave = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/\s+/g, " ").trim().toUpperCase();
+
+/** Nombres únicos por asesor, quedándose con la primera grafía vista. */
+function porClave(filas) {
+  const vistos = new Map();
+  filas.forEach(r => { if (r.Agente) vistos.set(clave(r.Agente), r.Agente); });
+  return [...vistos.values()];
+}
+
 /** "ALZATE VALENCIA CAROLINA" -> "Carolina Alzate".
  *  Wolkvox entrega APELLIDO1 APELLIDO2 NOMBRE1 [NOMBRE2]. */
 const CACHE = new Map();
@@ -622,7 +640,7 @@ const hm = h => {
  *  no cuadra con la maestra al minuto, deja de ser la misma verdad. */
 function horasPorEstado(aux, agente = null) {
   const acc = new Map();
-  aux.filter(r => !agente || r.Agente === agente).forEach(r => {
+  aux.filter(r => !agente || clave(r.Agente) === agente).forEach(r => {
     const k = r["Estado auxiliar"];
     const o = acc.get(k) || { estado: k, horas: 0, filas: 0, duracion: null };
     o.horas += num(r.Horas) || 0;
@@ -646,10 +664,9 @@ function tablaAuxiliares(aux, nomina) {
   d.className = "tv";
   d.innerHTML = `<summary>Ver los datos en tabla, por asesor</summary>`;
 
-  const conPausas = [...new Set(aux.map(r => r.Agente))];
   // La nómina completa, no solo quien registró pausas: que un asesor no
   // aparezca porque no registró ninguna se lee como un error del tablero.
-  const agentes = [...new Set([...conPausas, ...nomina.map(r => r.Agente)])]
+  const agentes = porClave([...aux, ...nomina])
     .sort((a, b) => corto(a).localeCompare(corto(b)));
 
   const barra = document.createElement("div");
@@ -657,7 +674,7 @@ function tablaAuxiliares(aux, nomina) {
   const id = "aux-" + Math.random().toString(36).slice(2, 8);
   barra.innerHTML = `<label for="${id}">Asesor</label><select id="${id}">` +
     `<option value="">Todo el equipo</option>` +
-    agentes.map(a => `<option value="${esc(a)}">${esc(corto(a))}</option>`).join("") +
+    agentes.map(a => `<option value="${esc(clave(a))}">${esc(corto(a))}</option>`).join("") +
     `</select>`;
 
   const cont = document.createElement("div");
@@ -724,7 +741,7 @@ const CANALES = [
 /** Agrupa la curva por hora; con `agente`, solo la suya. */
 function porHora(curva, agente = null) {
   const acc = new Map();
-  curva.filter(r => !agente || r.Agente === agente).forEach(r => {
+  curva.filter(r => !agente || clave(r.Agente) === agente).forEach(r => {
     const h = num(r.Hora);
     if (h == null) return;
     const o = acc.get(h) || { hora: h, Llamadas: 0, Digitales: 0, agentes: new Map() };
@@ -743,7 +760,7 @@ function tablaCurva(curva, nomina) {
   d.className = "tv";
   d.innerHTML = `<summary>Ver los datos en tabla, por asesor</summary>`;
 
-  const agentes = [...new Set([...curva.map(r => r.Agente), ...nomina.map(r => r.Agente)])]
+  const agentes = porClave([...curva, ...nomina])
     .sort((a, b) => corto(a).localeCompare(corto(b)));
 
   const barra = document.createElement("div");
@@ -751,7 +768,7 @@ function tablaCurva(curva, nomina) {
   const id = "curva-" + Math.random().toString(36).slice(2, 8);
   barra.innerHTML = `<label for="${id}">Asesor</label><select id="${id}">` +
     `<option value="">Todo el equipo</option>` +
-    agentes.map(a => `<option value="${esc(a)}">${esc(corto(a))}</option>`).join("") + `</select>`;
+    agentes.map(a => `<option value="${esc(clave(a))}">${esc(corto(a))}</option>`).join("") + `</select>`;
 
   const cont = document.createElement("div");
   function pintar(agente) {
@@ -842,11 +859,13 @@ function semaforo(cruce, puntAgente, U) {
     "Una fila por asesor. Las alertas son las que ya calcula el pipeline; los umbrales vienen de horarios.yaml y se muestran junto a cada columna para que no haya que adivinarlos.");
   if (!cruce.length) { c.appendChild(vacio("Sin asesores evaluados en el periodo.")); return c; }
 
-  const punt = new Map(puntAgente.map(r => [r.Agente, r]));
+  // Por clave y no por texto: cruzar la grafia de la API contra la del
+  // YAML fallaba en silencio y el asesor salia con "0 de 0" dias.
+  const punt = new Map(puntAgente.map(r => [clave(r.Agente), r]));
   const filas = [...cruce]
     .sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))
     .map(r => {
-      const p = punt.get(r.Agente) || {};
+      const p = punt.get(clave(r.Agente)) || {};
       const pTarde = num(p["% Entradas tarde"]) || 0;
       const nTarde = num(p["Entradas tarde"]) || 0;
       const nDias = num(p["Días trabajados"]) || 0;
