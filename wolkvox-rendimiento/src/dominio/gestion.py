@@ -7,6 +7,8 @@ marcado como `hit`.
 """
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from src.dominio.nombres import normalizar
@@ -115,7 +117,13 @@ def tiempos_por_agente(df_agente: pd.DataFrame,
             fila[etiqueta] = _hhmmss(total)
             fila[f"% {etiqueta}"] = _pct(total, logueado)
             fila[f"Prom. día {etiqueta}"] = _hhmmss(total / dias) if dias else ""
-        fila["Ocupación %"] = round(grupo["ocupacion"].mean(), 1)
+        # Ponderada por tiempo logueado, no promedio simple: con agent_8 son 24
+        # filas por agente y las horas sin conexión traen ocupación 0, así que
+        # la media plana hundía la cifra (26 % donde agent_1 da 67 %). Con
+        # agent_1, que trae una sola fila, el resultado es idéntico.
+        fila["Ocupación %"] = round(
+            (grupo["ocupacion"] * grupo["login_time_seg"]).sum() / logueado, 1
+        ) if logueado else 0.0
         fila["Prom. día logueado"] = _hhmmss(logueado / dias) if dias else ""
         filas.append(fila)
 
@@ -141,7 +149,7 @@ def auxiliares_por_tipo(df_aux: pd.DataFrame) -> pd.DataFrame:
                  .reset_index(drop=True))
 
 
-COLUMNAS_CURVA = ["Hora", "Agente", "Llamadas", "Digitales"]
+COLUMNAS_CURVA = ["Hora", "Agente", "Llamadas", "Digitales", "Digitales abiertas"]
 
 
 def _conteo_horario(df: pd.DataFrame, etiqueta: str, columna: str = "hora") -> pd.DataFrame:
@@ -156,34 +164,167 @@ def _conteo_horario(df: pd.DataFrame, etiqueta: str, columna: str = "hora") -> p
     return tabla
 
 
-def curva_horaria(df_llamadas: pd.DataFrame,
-                  df_chats: pd.DataFrame | None = None) -> pd.DataFrame:
+def curva_horaria(df_llamadas: pd.DataFrame, df_chats: pd.DataFrame | None = None,
+                  desde: date | None = None, hasta: date | None = None) -> pd.DataFrame:
     """Gestiones por hora del día y agente, separadas por canal.
 
     ⚠️ Las dos columnas se miden en momentos distintos, y el tablero lo
     rotula así:
 
     - `Llamadas` (cdr_1) se fecha en el momento de la llamada.
-    - `Digitales` (chat_1) se cuenta por su hora de CIERRE, no de apertura.
+    - `Digitales` (chat_1) se cuenta por su hora de CIERRE.
+    - `Digitales abiertas`, por su hora de APERTURA, y solo las abiertas
+      DENTRO del periodo.
 
-    La apertura no sirve: chat_1 filtra la consulta por la fecha de cierre,
-    así que pedir "hoy hasta las 08:45" devuelve conversaciones abiertas ayer
-    —comprobado: las 54 del 19/08 se abrieron el 18— y contarlas por su hora
-    de apertura dibujaba barras a las 14:00 en un corte de las 08:45. El
-    cierre es la única marca garantizada dentro de la ventana, y además es
-    cuando el asesor tipificó: cuándo se trabajó, no cuándo entró.
+    Ese filtro no es opcional: chat_1 filtra la consulta por la fecha de
+    cierre, así que pedir "hoy hasta las 08:45" devuelve conversaciones
+    abiertas ayer —comprobado: las 54 del 19/08 se abrieron el 18— y sin
+    acotar por fecha dibujaban barras a las 14:00 en un corte de las 08:45.
+
+    Las dos columnas digitales responden preguntas distintas: cuándo ENTRÓ el
+    tráfico (abiertas) y cuándo se TRABAJÓ (cerradas). No suman entre sí.
     """
-    voz = _conteo_horario(df_llamadas, "Llamadas")
-    digital = _conteo_horario(df_chats if df_chats is not None else pd.DataFrame(),
-                              "Digitales", columna="hora_cierre")
+    chats = df_chats if df_chats is not None else pd.DataFrame()
 
-    if voz.empty and digital.empty:
+    # Solo las que se abrieron dentro del periodo: las que vienen arrastradas
+    # de días anteriores no pertenecen a esta curva.
+    abiertas = chats
+    if not chats.empty and "fecha" in chats.columns and desde and hasta:
+        fecha = pd.to_datetime(chats["fecha"], errors="coerce").dt.date
+        abiertas = chats[(fecha >= desde) & (fecha <= hasta)]
+
+    partes = [_conteo_horario(df_llamadas, "Llamadas"),
+              _conteo_horario(chats, "Digitales", columna="hora_cierre"),
+              _conteo_horario(abiertas, "Digitales abiertas")]
+    if all(p.empty for p in partes):
         return pd.DataFrame(columns=COLUMNAS_CURVA)
 
-    tabla = voz.merge(digital, on=["Hora", "Agente"], how="outer")
-    for col in ("Llamadas", "Digitales"):
+    tabla = partes[0]
+    for otra in partes[1:]:
+        tabla = tabla.merge(otra, on=["Hora", "Agente"], how="outer")
+    for col in COLUMNAS_CURVA[2:]:
         tabla[col] = pd.to_numeric(tabla.get(col), errors="coerce").fillna(0).astype(int)
     return tabla[COLUMNAS_CURVA].sort_values(["Hora", "Agente"]).reset_index(drop=True)
+
+
+def por_dia(agente_hora: pd.DataFrame, auxiliar_dia: pd.DataFrame,
+            llamadas: pd.DataFrame, chats: pd.DataFrame, detalle: pd.DataFrame,
+            codigos: dict, umbrales: dict,
+            agente_dia: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
+    """Los mismos cuadros del periodo, pero una versión por cada día.
+
+    Es lo que permite filtrar la semana o el mes a un día concreto sin que el
+    tablero recalcule nada: en vez de re-agregar en JavaScript —donde sumar
+    porcentajes daría cifras falsas— se emite el cuadro ya resuelto para cada
+    fecha, con las MISMAS funciones que producen el del periodo. Un día
+    filtrado y un informe diario dan por construcción el mismo número.
+
+    El truco es pasar la fecha como si fuera el "Periodo": esas funciones ya
+    agrupan por él, así que no hace falta lógica nueva.
+
+    Los tiempos salen de `agente_dia` (agent_1 consultado día a día), la misma
+    fuente que usa el informe del periodo. agent_8 sirve de reserva, pero su
+    ocupación NO es reconstruible desde las horas: Wolkvox la calcula con otro
+    denominador y daba 63,6 % donde el informe del día decía 67,4 %.
+    """
+    fuente_tiempos = agente_dia if agente_dia is not None and not agente_dia.empty else agente_hora
+    # Las fechas salen de TODAS las fuentes, no solo de los días laborales: si
+    # una conversación cerró un domingo, cuenta en el total del periodo y sin
+    # esto no aparecería en ningún día, así que la suma de los días no cuadraría
+    # con la semana. Que el domingo no tenga puntualidad es correcto; que sus
+    # gestiones desaparezcan del filtro, no.
+    fechas = set()
+    for df, columna in ((detalle, "Fecha"), (llamadas, "fecha"),
+                        (chats, "fecha_cierre"), (fuente_tiempos, "fecha"),
+                        (auxiliar_dia, "fecha")):
+        if not df.empty and columna in df.columns:
+            fechas |= set(df[columna].dropna().astype(str).str.slice(0, 10))
+    fechas = sorted(f for f in fechas if f and f.lower() != "nat")
+    if not fechas:
+        return {}
+
+    def del_dia(df, columna):
+        if df.empty or columna not in df.columns:
+            return df.iloc[0:0]
+        return df[df[columna].astype(str).str.slice(0, 10) == fecha]
+
+    tiempos, cruces, auxes, curvas, generales = [], [], [], [], []
+    for fecha in fechas:
+        voz, digital = del_dia(llamadas, "fecha"), del_dia(chats, "fecha_cierre")
+
+        horas = del_dia(fuente_tiempos, "fecha")
+        # Ambas fuentes traen a TODOS los agentes aunque no hayan trabajado
+        # (agent_8, además, con sus 24 horas en cero). Sin descartarlos, quien
+        # no trabajó ese día entraba al cuadro con 0 % de todo y el tablero lo
+        # señalaba como "el caso más marcado".
+        if not horas.empty and "login_time_seg" in horas.columns:
+            activos_dia = (horas.groupby("agent_name")["login_time_seg"].sum() > 0)
+            horas = horas[horas["agent_name"].isin(activos_dia[activos_dia].index)]
+        del_periodo = pd.DataFrame()
+        if not horas.empty:
+            horas = horas.assign(Periodo=fecha)
+            del_periodo = tiempos_por_agente(
+                horas, {(fecha, a): 1 for a in horas["agent_name"].unique()})
+            if not del_periodo.empty:
+                tiempos.append(del_periodo.assign(Fecha=fecha))
+
+        efect = efectividad(voz, digital, pd.DataFrame(), horas, codigos)
+        if not del_periodo.empty and not efect.empty:
+            c = cruce(del_periodo, efect, None, umbrales)
+            if not c.empty:
+                cruces.append(c.assign(Fecha=fecha))
+
+        aux = del_dia(auxiliar_dia, "fecha")
+        if not aux.empty:
+            a = auxiliares_por_tipo(aux.assign(Periodo=fecha))
+            if not a.empty:
+                auxes.append(a.assign(Fecha=fecha))
+
+        cur = curva_horaria(voz, digital, desde=None, hasta=None)
+        if not cur.empty:
+            curvas.append(cur.assign(Fecha=fecha))
+
+        # Los KPIs de la cabecera, también por día: si el resto del tablero se
+        # filtra y ellos siguen mostrando la semana, el coordinador lee dos
+        # periodos distintos en la misma pantalla.
+        gen = general(del_periodo, efect, None)
+        if not gen.empty:
+            generales.append(gen.assign(Fecha=fecha))
+
+    unir = lambda partes: (pd.concat(partes, ignore_index=True) if partes else pd.DataFrame())
+    return {"tiempos_dia": unir(tiempos), "cruce_dia": unir(cruces),
+            "auxiliares_dia_detalle": unir(auxes), "curva_dia": unir(curvas),
+            "general_dia": unir(generales)}
+
+
+def tipificaciones(df_llamadas: pd.DataFrame, df_chats: pd.DataFrame,
+                   codigos: dict) -> pd.DataFrame:
+    """Qué códigos usa la operación, separando voz de digital.
+
+    Los dos canales se cuentan aparte porque sus códigos no son los mismos ni
+    comparables: sumarlos escondería que un código domina en un canal y no
+    existe en el otro. `Efectivas` sale de la bandera `hit` que la propia
+    operación configuró en Wolkvox, no de un criterio inventado aquí.
+    """
+    columnas = ["Canal", "Código", "Gestiones", "Efectivas", "% Efectividad"]
+    filas = []
+    for etiqueta, df in (("Voz", df_llamadas), ("Digital", df_chats)):
+        if df.empty or "cod_act" not in df.columns:
+            continue
+        d = df.copy()
+        d["_cod"] = d["cod_act"].astype(str).str.strip().replace("", "(sin tipificar)")
+        d.loc[_sin_tipificar(d["cod_act"]), "_cod"] = "(sin tipificar)"
+        d["_hit"] = _bandera(d["cod_act"], codigos, "hit")
+        for cod, grupo in d.groupby("_cod"):
+            efectivas = int(grupo["_hit"].sum())
+            filas.append({"Canal": etiqueta, "Código": cod, "Gestiones": len(grupo),
+                          "Efectivas": efectivas,
+                          "% Efectividad": _pct(efectivas, len(grupo))})
+    if not filas:
+        return pd.DataFrame(columns=columnas)
+    return (pd.DataFrame(filas)[columnas]
+            .sort_values(["Canal", "Gestiones"], ascending=[True, False])
+            .reset_index(drop=True))
 
 
 def _pivote_auxiliares(df_aux: pd.DataFrame, formato: str,

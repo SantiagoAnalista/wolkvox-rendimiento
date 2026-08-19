@@ -106,6 +106,14 @@ def agente_dia(registros: list[dict], fecha: str) -> pd.DataFrame:
     return df
 
 
+def agente_por_dia(registros: list[dict], fecha: str) -> pd.DataFrame:
+    """agent_1 día a día. Conserva la columna 'fecha' que agrega la extracción."""
+    df = agente_dia(registros, fecha)
+    if not df.empty and registros and "fecha" in registros[0]:
+        df["fecha"] = [r.get("fecha", fecha) for r in registros]
+    return df
+
+
 def agente_hora(registros: list[dict], fecha: str) -> pd.DataFrame:
     """agent_8 — los mismos indicadores, desglosados hora a hora.
 
@@ -121,9 +129,17 @@ def agente_hora(registros: list[dict], fecha: str) -> pd.DataFrame:
     df = _enteros(_segundos(_df(registros, cols)))
     if df.empty:
         return df
-    df["fecha"] = df["date"].replace("", pd.NA).fillna(fecha)
+    # agent_8 devuelve la fecha compacta ('20260818') y la hora como 'HH:MM'.
+    # Se normaliza a ISO para que case con el resto de cuadros; sin eso, el
+    # filtro por día del tablero no encontraba ninguna coincidencia.
+    crudo = df["date"].astype(str).str.strip().replace("", pd.NA)
+    df["fecha"] = (pd.to_datetime(crudo, format="%Y%m%d", errors="coerce")
+                     .dt.strftime("%Y-%m-%d").fillna(fecha))
     df["hora"] = (df["hour"].astype(str).str.slice(0, 2)
                     .pipe(pd.to_numeric, errors="coerce").fillna(0).astype(int))
+    # Mismas columnas derivadas que agent_1, para que los cuadros que agregan
+    # tiempos puedan consumir indistintamente el resumen diario o el horario.
+    df["ocupacion"] = _ocupacion(df)
     return df
 
 

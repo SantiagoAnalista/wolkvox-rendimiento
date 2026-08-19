@@ -44,7 +44,8 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
     log.info("Rango partido en %d %s(s): %s", len(tramos), periodo, [t[0] for t in tramos])
 
     acumulado: dict[str, list[pd.DataFrame]] = {
-        "logueo": [], "agente": [], "agente_hora": [], "auxiliar": [], "auxiliar_dia": [],
+        "logueo": [], "agente": [], "agente_dia": [], "agente_hora": [],
+        "auxiliar": [], "auxiliar_dia": [],
         "llamadas": [], "chats_prod": [], "chats": []}
 
     with WolkvoxClient(cfg.servidor, cfg.token, cfg.timeout_seg, cfg.reintentos) as api:
@@ -57,6 +58,10 @@ def extraer_analisis(cfg: Config, desde: date, hasta: date, periodo: str = "mes"
                 "logueo": (lambda: extraccion.logueo_por_dia(api, ini, fin), traduccion.logueo_por_dia),
                 "agente": (lambda: extraccion.agente_dia(api, ini, fin),
                            lambda r: traduccion.agente_dia(r, etiqueta)),
+                # El mismo agent_1 pero día a día, para que filtrar una fecha
+                # en la semana dé exactamente las cifras del informe de ese día.
+                "agente_dia": (lambda: extraccion.agente_por_dia(api, ini, fin),
+                               lambda r: traduccion.agente_por_dia(r, etiqueta)),
                 # Solo hace falta en una jornada en curso: es lo que distingue
                 # "sigue conectado" de "se fue a las 13:29".
                 "agente_hora": (lambda: extraccion.agente_hora(api, ini, fin),
@@ -150,7 +155,16 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
         "auxiliares": gestion.auxiliares_por_tipo(auxiliar),
         "efectividad": efect,
         "cruce": gestion.cruce(tiempos, efect, activos, horarios["umbrales"]),
-        "curva_horaria": gestion.curva_horaria(filtrar("llamadas"), filtrar("chats")),
+        "curva_horaria": gestion.curva_horaria(filtrar("llamadas"), filtrar("chats"),
+                                               desde, hasta),
+        "tipificaciones": gestion.tipificaciones(filtrar("llamadas"), filtrar("chats"),
+                                                 gestion.mapa_codigos(dfs["codigos"])),
+        # Los mismos cuadros resueltos día a día, para que el tablero pueda
+        # filtrar la semana o el mes a una fecha sin recalcular nada.
+        **gestion.por_dia(filtrar("agente_hora"), auxiliar_dia,
+                          filtrar("llamadas"), filtrar("chats"), detalle,
+                          gestion.mapa_codigos(dfs["codigos"]), horarios["umbrales"],
+                          agente_dia=filtrar("agente_dia")),
     }
 
     hora_corte = f"{corte:%H:%M}" if corte else None
@@ -190,8 +204,8 @@ def _informe_del_periodo(dfs: dict, horarios: dict, periodo: str, etiqueta: str,
     return destino
 
 
-FUENTES_ANALISIS = ["logueo", "agente", "agente_hora", "auxiliar", "auxiliar_dia",
-                    "llamadas", "chats_prod", "chats", "codigos"]
+FUENTES_ANALISIS = ["logueo", "agente", "agente_dia", "agente_hora", "auxiliar",
+                    "auxiliar_dia", "llamadas", "chats_prod", "chats", "codigos"]
 
 
 def _leer_backup(cfg: Config, desde: date, hasta: date) -> dict[str, pd.DataFrame]:

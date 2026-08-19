@@ -75,14 +75,33 @@ def test_curva_horaria_separa_voz_de_digital():
     assert curva.loc[(9, "Ana"), "Digitales"] == 0     # hora con voz pero sin digital
 
 
-def test_una_conversacion_de_ayer_se_cuenta_en_su_hora_de_cierre():
+def test_una_conversacion_de_ayer_no_cuenta_como_abierta_hoy():
     """El caso que provoco el defecto: chat_1 devolvia conversaciones abiertas
     AYER a las 14:00 y cerradas hoy a las 08:05, y la curva dibujaba una barra
-    a las 14:00 en un corte de las 08:45."""
-    de_ayer = pd.DataFrame([{"hora": 14, "hora_cierre": 8, "agent_name": "Ana"}])
-    curva = gestion.curva_horaria(pd.DataFrame(), de_ayer).set_index(["Hora", "Agente"])
-    assert (8, "Ana") in curva.index
-    assert 14 not in curva.reset_index()["Hora"].tolist()
+    a las 14:00 en un corte de las 08:45.
+
+    Cuenta como CERRADA a las 8 —ahi fue cuando el asesor la trabajo— y no
+    como abierta, porque no se abrio en el periodo."""
+    de_ayer = pd.DataFrame([{"fecha": "2026-08-18", "hora": 14,
+                             "hora_cierre": 8, "agent_name": "Ana"}])
+    curva = gestion.curva_horaria(pd.DataFrame(), de_ayer,
+                                  desde=date(2026, 8, 19), hasta=date(2026, 8, 19))
+    assert curva.set_index(["Hora", "Agente"]).loc[(8, "Ana"), "Digitales"] == 1
+    assert curva["Digitales abiertas"].sum() == 0
+    assert 14 not in curva["Hora"].tolist()
+
+
+def test_una_conversacion_del_dia_cuenta_en_las_dos_columnas():
+    """Abierta a las 9 y cerrada a las 11: entro a las 9 y se trabajo a las 11.
+    Son preguntas distintas, por eso no se suman entre si."""
+    hoy = pd.DataFrame([{"fecha": "2026-08-19", "hora": 9,
+                         "hora_cierre": 11, "agent_name": "Ana"}])
+    curva = gestion.curva_horaria(pd.DataFrame(), hoy,
+                                  desde=date(2026, 8, 19), hasta=date(2026, 8, 19))
+    idx = curva.set_index(["Hora", "Agente"])
+    assert idx.loc[(9, "Ana"), "Digitales abiertas"] == 1
+    assert idx.loc[(9, "Ana"), "Digitales"] == 0
+    assert idx.loc[(11, "Ana"), "Digitales"] == 1
 
 
 def test_una_hora_solo_digital_igual_aparece():
@@ -265,10 +284,10 @@ def test_con_corte_el_periodo_queda_marcado_como_parcial():
     p = tablero_datos.construir(cuadros_minimos(), METADATOS, "2026-08-17", "dia",
                                 date(2026, 8, 17), date(2026, 8, 17), UMBRALES, 3,
                                 corte="12:10",
-                                archivo_excel="gestion_wolkbox_2026-08-17_1210.xlsx")
+                                archivo_excel="gestion_wolkvox_2026-08-17_1210.xlsx")
     assert p["corte"] == "12:10"
     assert p["parcial"] is True
-    assert p["archivo_excel"] == "gestion_wolkbox_2026-08-17_1210.xlsx"
+    assert p["archivo_excel"] == "gestion_wolkvox_2026-08-17_1210.xlsx"
 
 
 def test_los_cortes_del_dia_reescriben_el_mismo_periodo(tmp_path):
@@ -287,26 +306,26 @@ def test_los_cortes_del_dia_reescriben_el_mismo_periodo(tmp_path):
 
 def test_se_conserva_el_enlace_cuando_la_maestra_sigue_vigente(tmp_path):
     p = construir()
-    p["archivo_excel"] = "gestion_wolkbox_2026-S32.xlsx"
+    p["archivo_excel"] = "gestion_wolkvox_2026-S32.xlsx"
     html = tablero_html.generar([p], tmp_path,
-                                excel_vigentes={"gestion_wolkbox_2026-S32.xlsx"}
+                                excel_vigentes={"gestion_wolkvox_2026-S32.xlsx"}
                                 ).read_text(encoding="utf-8")
-    assert "gestion_wolkbox_2026-S32.xlsx" in html
+    assert "gestion_wolkvox_2026-S32.xlsx" in html
 
 
 def test_se_quita_el_enlace_cuando_la_retencion_ya_borro_la_maestra(tmp_path):
     """Mejor sin enlace que con un enlace roto."""
     p = construir()
-    p["archivo_excel"] = "gestion_wolkbox_2026-S32.xlsx"
+    p["archivo_excel"] = "gestion_wolkvox_2026-S32.xlsx"
     html = tablero_html.generar([p], tmp_path, excel_vigentes=set()).read_text(encoding="utf-8")
-    assert "gestion_wolkbox_2026-S32.xlsx" not in html
+    assert "gestion_wolkvox_2026-S32.xlsx" not in html
 
 
 def test_sin_lista_de_vigentes_no_se_toca_el_enlace(tmp_path):
     p = construir()
-    p["archivo_excel"] = "gestion_wolkbox_2026-S32.xlsx"
+    p["archivo_excel"] = "gestion_wolkvox_2026-S32.xlsx"
     html = tablero_html.generar([p], tmp_path).read_text(encoding="utf-8")
-    assert "gestion_wolkbox_2026-S32.xlsx" in html
+    assert "gestion_wolkvox_2026-S32.xlsx" in html
 
 
 # ── Reintento de escritura ───────────────────────────────────────────────

@@ -44,6 +44,13 @@ CUADROS_TABLERO = (
     "cruce",
     "auxiliares",
     "curva_horaria",
+    "tipificaciones",
+    # Versión por día de los mismos cuadros: alimenta el filtro de fecha.
+    "tiempos_dia",
+    "cruce_dia",
+    "auxiliares_dia_detalle",
+    "curva_dia",
+    "general_dia",
 )
 
 ETIQUETA_VALIDA = re.compile(r"^\d{4}-(\d{2}|S\d{2}|\d{2}-\d{2})$")

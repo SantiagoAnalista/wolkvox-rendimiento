@@ -78,6 +78,41 @@ def agente_dia(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> lis
     return client.consultar("reports_manager.php", {"api": "agent_1", **_rango(dt_ini, dt_fin)})
 
 
+def agente_por_dia(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime,
+                   pausa_seg: float = 1.5) -> list[dict]:
+    """agent_1 día por día, agregando la fecha a cada registro.
+
+    Igual que agent_3, el endpoint agrega todo el rango sin desglose interno.
+    Hace falta porque su `occupancy` diario NO se puede reconstruir sumando el
+    de agent_8: Wolkvox los calcula con denominadores distintos y la diferencia
+    llegaba a 4 puntos. Sin esto, filtrar un día en la semana daba una
+    ocupación distinta a la del informe de ese mismo día.
+    """
+    registros, sin_datos, fallidos = [], 0, []
+    dia = dt_ini.date()
+    while dia <= dt_fin.date():
+        ini = datetime.combine(dia, time.min)
+        fin = min(datetime.combine(dia, time.max).replace(microsecond=0), dt_fin)
+        try:
+            lote = client.consultar("reports_manager.php", {"api": "agent_1", **_rango(ini, fin)})
+            registros.extend({**fila, "fecha": dia.isoformat()} for fila in lote)
+        except httpx.HTTPStatusError as e:
+            if es_sin_datos(e):
+                sin_datos += 1
+            else:
+                fallidos.append(dia.isoformat())
+        except Exception:
+            fallidos.append(dia.isoformat())
+        dia += timedelta(days=1)
+        sleep(pausa_seg)
+
+    log.info("agent_1 día a día: %d registros, %d días sin actividad", len(registros), sin_datos)
+    if fallidos:
+        log.warning("agent_1 día a día: %d días no se pudieron consultar: %s",
+                    len(fallidos), ", ".join(fallidos))
+    return registros
+
+
 def agente_hora(client: WolkvoxClient, dt_ini: datetime, dt_fin: datetime) -> list[dict]:
     """reports_manager.php?api=agent_8 — tiempos por agente, hora a hora.
 

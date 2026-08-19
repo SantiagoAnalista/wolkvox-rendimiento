@@ -102,7 +102,8 @@ select{font:500 13.5px var(--sans);color:var(--ink);background:var(--surface);
 .delta{font:600 11.5px/1 var(--mono);display:inline-flex;align-items:center;gap:3px}
 .delta.up{color:var(--delta-good)} .delta.down{color:var(--delta-bad)} .delta.flat{color:var(--muted)}
 
-.grid{display:grid;gap:12px;margin-top:12px;grid-template-columns:repeat(12,1fr)}
+.grid{display:grid;gap:12px;margin-top:12px;grid-template-columns:repeat(12,1fr);
+      align-items:start}   /* cada tarjeta con su alto: abrir una tabla no estira a la vecina */
 .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);
       padding:16px 18px 14px;box-shadow:var(--shadow);min-width:0;grid-column:span 12}
 .card.half{grid-column:span 6}
@@ -199,6 +200,10 @@ footer code{font-family:var(--mono);font-size:11.5px;background:var(--surface-2)
     <div class="pick" id="pick">
       <label for="sel">Periodo</label>
       <select id="sel"></select>
+    </div>
+    <div class="pick" id="pick-dia" hidden>
+      <label for="sel-dia">Día</label>
+      <select id="sel-dia"></select>
     </div>
     <div class="spacer"></div>
     <p class="hint">Las cifras son las mismas del Excel de la corrida: el tablero no recalcula nada.</p>
@@ -734,7 +739,8 @@ function chartAuxiliares(aux, nomina = []) {
 
 /* ══ Curva horaria ════════════════════════════════════════════════ */
 const CANALES = [
-  { k: "Llamadas",  label: "Llamadas",           color: "var(--s1)", tok: "--s1" },
+  { k: "Llamadas", label: "Llamadas", color: "var(--s1)", tok: "--s1" },
+  { k: "Digitales abiertas", label: "Digitales abiertas", color: "var(--s3)", tok: "--s3" },
   { k: "Digitales", label: "Digitales cerradas", color: "var(--s2)", tok: "--s2" }
 ];
 
@@ -744,10 +750,12 @@ function porHora(curva, agente = null) {
   curva.filter(r => !agente || clave(r.Agente) === agente).forEach(r => {
     const h = num(r.Hora);
     if (h == null) return;
-    const o = acc.get(h) || { hora: h, Llamadas: 0, Digitales: 0, agentes: new Map() };
+    const o = acc.get(h) || { hora: h, Llamadas: 0, Digitales: 0,
+                              "Digitales abiertas": 0, agentes: new Map() };
     const voz = num(r.Llamadas) || 0, dig = num(r.Digitales) || 0;
     o.Llamadas += voz;
     o.Digitales += dig;
+    o["Digitales abiertas"] += num(r["Digitales abiertas"]) || 0;
     const a = o.agentes.get(r.Agente) || [0, 0];
     o.agentes.set(r.Agente, [a[0] + voz, a[1] + dig]);
     acc.set(h, o);
@@ -780,14 +788,16 @@ function tablaCurva(curva, nomina) {
       return;
     }
     const tv = filas.reduce((a, o) => a + o.Llamadas, 0);
+    const ta = filas.reduce((a, o) => a + o["Digitales abiertas"], 0);
     const td = filas.reduce((a, o) => a + o.Digitales, 0);
     cont.innerHTML = `<div class="tw"><table><thead><tr>` +
-      `<th>Hora</th><th>Llamadas</th><th>Digitales cerradas</th><th>Total</th>` +
+      `<th>Hora</th><th>Llamadas</th><th>Digitales abiertas</th><th>Digitales cerradas</th>` +
       `</tr></thead><tbody>` +
       filas.map(o => `<tr><td>${String(o.hora).padStart(2, "0")}:00</td>` +
-        `<td>${o.Llamadas}</td><td>${o.Digitales}</td><td>${o.Llamadas + o.Digitales}</td></tr>`).join("") +
-      `<tr><td><b>Total</b></td><td><b>${tv}</b></td><td><b>${td}</b></td>` +
-      `<td><b>${tv + td}</b></td></tr></tbody></table></div>`;
+        `<td>${o.Llamadas}</td><td>${o["Digitales abiertas"]}</td>` +
+        `<td>${o.Digitales}</td></tr>`).join("") +
+      `<tr><td><b>Total</b></td><td><b>${tv}</b></td><td><b>${ta}</b></td>` +
+      `<td><b>${td}</b></td></tr></tbody></table></div>`;
   }
   barra.querySelector("select").addEventListener("change", e => pintar(e.target.value));
   pintar("");
@@ -806,11 +816,11 @@ function chartCurva(curva, nomina = []) {
   const rows = porHora(curva);
   const W = 560, H = 220, L = 38, R = 12, T = 14, B = 32;
   const pw = W - L - R, ph = H - T - B;
-  const max = Math.max(1, ...rows.flatMap(r => [r.Llamadas, r.Digitales]));
+  const max = Math.max(1, ...rows.flatMap(r => CANALES.map(c => r[c.k])));
   const step = Math.ceil(max / 4 / 5) * 5 || 5;
   const yMax = Math.ceil(max / step) * step;
   const franja = pw / rows.length;
-  const bw = Math.max(4, Math.min(15, franja / 2 - 3));   // 2 barras + separación
+  const bw = Math.max(3, Math.min(12, franja / CANALES.length - 2));
 
   const plot = document.createElement("div"); plot.className = "plot";
   const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
@@ -829,8 +839,9 @@ function chartCurva(curva, nomina = []) {
       const v = r[canal.k];
       if (v <= 0) return;
       const h = v / yMax * ph, y = T + ph - h;
-      // Las dos barras se tocan por el centro de la franja, con 2px de aire.
-      const x = j === 0 ? cx - bw - 1 : cx + 1;
+      // Las barras se reparten centradas en la franja, con 2px de aire.
+      const ancho = CANALES.length * (bw + 2) - 2;
+      const x = cx - ancho / 2 + j * (bw + 2);
       svg("path", { d: rrect(x, y, bw, h, 4, 4, 0, 0), fill: canal.color }, g);
     });
     svg("rect", { x: cx - franja / 2, y: T, width: franja, height: ph, fill: "transparent" }, g);
@@ -840,8 +851,7 @@ function chartCurva(curva, nomina = []) {
       .map(([a, [voz, dig]]) => `<div class="t-r">${esc(corto(a))}: <b>${voz}</b> voz · <b>${dig}</b> digital</div>`)
       .join("");
     hover(g, `<div class="t-h">${String(r.hora).padStart(2, "0")}:00 – ${String(r.hora + 1).padStart(2, "0")}:00</div>` +
-      `<div class="t-r">Llamadas: <b>${r.Llamadas}</b></div>` +
-      `<div class="t-r">Digitales cerradas: <b>${r.Digitales}</b></div>${det}`);
+      CANALES.map(c => `<div class="t-r">${esc(c.label)}: <b>${r[c.k]}</b></div>`).join("") + det);
 
     svg("text", { x: cx, y: H - B + 16, "text-anchor": "middle", ...AX }, s)
       .textContent = String(r.hora).padStart(2, "0");
@@ -850,6 +860,71 @@ function chartCurva(curva, nomina = []) {
 
   c.appendChild(plot);
   c.appendChild(tablaCurva(curva, nomina));
+  return c;
+}
+
+
+/* ══ Tipificaciones ═══════════════════════════════════════════════ */
+function chartTipificaciones(tip) {
+  const c = card("half", "Tipificaciones usadas",
+    "Qué códigos aplica la operación, separados por canal: los de voz y los digitales " +
+    "no son los mismos ni comparables, y sumarlos escondería que uno domina en un canal " +
+    "y no existe en el otro. La parte sólida de cada barra es lo efectivo.");
+  if (!tip.length) { c.appendChild(vacio("Sin gestiones tipificadas en el periodo.")); return c; }
+
+  const barra = document.createElement("div");
+  barra.className = "tv-filtro";
+  const id = "tip-" + Math.random().toString(36).slice(2, 8);
+  const orden = ["Voz", "Digital"];
+  const canales = [...new Set(tip.map(r => r.Canal))]
+    .sort((a, b) => orden.indexOf(a) - orden.indexOf(b));
+  barra.innerHTML = `<label for="${id}">Canal</label><select id="${id}">` +
+    canales.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("") + `</select>`;
+  c.appendChild(barra);
+
+  const cont = document.createElement("div");
+  c.appendChild(cont);
+
+  function pintar(canal) {
+    cont.innerHTML = "";
+    const rows = tip.filter(r => r.Canal === canal)
+      .sort((a, b) => (num(b.Gestiones) || 0) - (num(a.Gestiones) || 0));
+    if (!rows.length) { cont.appendChild(vacio("Sin gestiones en este canal.")); return; }
+
+    const PAD_L = 168, PAD_R = 78, BH = 18, GAP = 12, TOP = 4, W = 560;
+    const H = TOP + rows.length * (BH + GAP), max = num(rows[0].Gestiones) || 1;
+    const plot = document.createElement("div"); plot.className = "plot";
+    const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img" }, plot);
+
+    rows.forEach((r, i) => {
+      const y = TOP + i * (BH + GAP);
+      const n = num(r.Gestiones) || 0, ef = num(r.Efectivas) || 0;
+      svg("text", { x: PAD_L - 10, y: y + BH / 2 + 4, "text-anchor": "end",
+                    fill: "var(--ink)", "font-size": "11.5" }, s)
+        .textContent = String(r["Código"]).slice(0, 26);
+      const w = Math.max(2, (W - PAD_L - PAD_R) * n / max);
+      // La parte efectiva se pinta encima, en el mismo carril: se ve de un
+      // golpe cuánto de ese código realmente cumplió objetivo.
+      svg("path", { d: rrect(PAD_L, y, w, BH, 0, 4, 4, 0), fill: "var(--bar-quiet)" }, s);
+      if (ef > 0)
+        svg("path", { d: rrect(PAD_L, y, Math.max(2, w * ef / n), BH, 0, 4, 4, 0),
+                      fill: "var(--s1)" }, s);
+      const g = svg("g", {}, s);
+      svg("rect", { x: PAD_L, y, width: W - PAD_L - PAD_R, height: BH, fill: "transparent" }, g);
+      hover(g, `<div class="t-h">${esc(r["Código"])}</div>` +
+        `<div class="t-r">Gestiones: <b>${n}</b></div>` +
+        `<div class="t-r">Efectivas: <b>${ef}</b> (${fmt(num(r["% Efectividad"]))} %)</div>`);
+      svg("text", { x: PAD_L + w + 8, y: y + BH / 2 + 4, fill: "var(--ink-2)",
+                    "font-size": "11", "font-weight": "600" }, s)
+        .textContent = `${n}  ·  ${fmt(num(r["% Efectividad"]), 0)}%`;
+    });
+    cont.appendChild(plot);
+    cont.appendChild(vistaTabla(["Código", "Gestiones", "Efectivas", "% Efectividad"],
+      rows.map(r => [esc(r["Código"]), r.Gestiones, r.Efectivas,
+                     fmt(num(r["% Efectividad"])) + " %"])));
+  }
+  barra.querySelector("select").addEventListener("change", e => pintar(e.target.value));
+  pintar(canales[0]);
   return c;
 }
 
@@ -943,6 +1018,8 @@ const FOCOS = [
 const focoDe = min => FOCOS.reduce((elegido, f) => (min >= f.desde ? f : elegido), FOCOS[0]);
 
 const NOMBRE_TIPO = { dia: "Día", semana: "Semana", mes: "Mes" };
+// "Todo el semana" chirría: cada alcance lleva su artículo.
+const TODO_EL = { semana: "Toda la semana", mes: "Todo el mes" };
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
@@ -961,8 +1038,57 @@ function anterior(p) {
   return mismos.length ? mismos[0] : null;   // PERIODOS viene del más reciente al más antiguo
 }
 
+/** Los cuadros del periodo, o los de un solo día si hay filtro.
+ *
+ *  El día viene ya resuelto desde el dominio (`*_dia`), no se re-agrega aquí:
+ *  promediar porcentajes en el navegador daría cifras que no cuadran con
+ *  ningún informe. Filtrar un día da, por construcción, lo mismo que el
+ *  informe diario de esa fecha.
+ */
+function recortar(C, dia) {
+  if (!dia) return C;
+  const del = (filas, campo) => (filas || []).filter(r => r.Fecha === dia).map(r => {
+    const { Fecha, ...resto } = r;
+    return resto;
+  });
+  return {
+    ...C,
+    puntualidad_detalle: (C.puntualidad_detalle || []).filter(r => r.Fecha === dia),
+    tiempos: del(C.tiempos_dia),
+    cruce: del(C.cruce_dia),
+    auxiliares: del(C.auxiliares_dia_detalle),
+    curva_horaria: del(C.curva_dia),
+  };
+}
+
+/** Fechas con datos dentro del periodo, para poblar el filtro. */
+function diasDe(C) {
+  const fechas = new Set();
+  ["cruce_dia", "curva_dia", "auxiliares_dia_detalle"].forEach(k =>
+    (C[k] || []).forEach(r => { if (r.Fecha) fechas.add(r.Fecha); }));
+  (C.puntualidad_detalle || []).forEach(r => { if (r.Fecha) fechas.add(r.Fecha); });
+  return [...fechas].sort();
+}
+
+let diaFiltrado = null;
+
+/** KPIs del periodo, o los del día filtrado.
+ *
+ *  Vienen resueltos desde el dominio igual que los cuadros: si la cabecera
+ *  siguiera mostrando la semana con el resto filtrado, se leerían dos
+ *  periodos distintos en la misma pantalla.
+ */
+function kpisDe(p, dia) {
+  if (!dia) return p.kpis;
+  const filas = (p.cuadros.general_dia || []).filter(r => r.Fecha === dia);
+  if (!filas.length) return {};
+  return Object.fromEntries(filas.map(r => [String(r.Indicador).trim(), r.Valor]));
+}
+
 function render(p) {
-  const U = p.umbrales, C = p.cuadros, K = p.kpis;
+  const U = p.umbrales;
+  const C = recortar(p.cuadros, diaFiltrado);
+  const K = kpisDe(p, diaFiltrado);
   const prev = anterior(p);
   const etiquetaDelta = prev ? `vs. ${nombreCorto(prev)}` : "sin periodo previo";
   const d = clave => {
@@ -981,7 +1107,9 @@ function render(p) {
     $("#foco-t").textContent = `${p.corte} · ${f.t}`;
     $("#foco-p").textContent = f.p;
   } else {
-    $("#foco-t").textContent = p.titulo || p.etiqueta;
+    $("#foco-t").textContent = diaFiltrado
+      ? `${p.titulo || p.etiqueta} — ${diaFiltrado.slice(8, 10)}/${diaFiltrado.slice(5, 7)}`
+      : (p.titulo || p.etiqueta);
     if (cruce.length) {
       const peor = [...cruce].sort((a, b) => (num(a["% Efectividad total"]) || 0) - (num(b["% Efectividad total"]) || 0))[0];
       $("#foco-p").textContent =
@@ -1010,15 +1138,17 @@ function render(p) {
   // ── Gráficos ──
   const g = $("#grid");
   g.innerHTML = "";
-  if (p.periodo === "dia") {
+  if (p.periodo === "dia" || diaFiltrado) {
     g.appendChild(panelConexion(C.puntualidad_detalle || [], U, corteMin));
     g.appendChild(chartCurva(C.curva_horaria || [], C.puntualidad_agente || []));
+    if (diaFiltrado) g.appendChild(chartCruce(cruce, U));
   } else {
     g.appendChild(chartCalendario(C.puntualidad_detalle || [], U));
     g.appendChild(chartCruce(cruce, U));
   }
   g.appendChild(chartDistribucion(C.tiempos || []));
   g.appendChild(chartAuxiliares(C.auxiliares || [], C.puntualidad_agente || []));
+  g.appendChild(chartTipificaciones(C.tipificaciones || []));
   g.appendChild(semaforo(cruce, C.puntualidad_agente || [], U));
 
   // ── Cabecera y pie ──
@@ -1063,7 +1193,7 @@ function pintar(etiqueta) {
   $("#seg").innerHTML = TIPOS.map(t =>
     `<button type="button" data-tipo="${t}" aria-pressed="${t === tipo}">${NOMBRE_TIPO[t]}</button>`).join("");
   $("#seg").querySelectorAll("[data-tipo]").forEach(b =>
-    b.addEventListener("click", () => { tipo = b.dataset.tipo; pintar(); }));
+    b.addEventListener("click", () => { tipo = b.dataset.tipo; diaFiltrado = null; pintar(); }));
 
   const delTipo = PERIODOS.filter(x => x.periodo === tipo);
   const sel = $("#sel");
@@ -1073,10 +1203,26 @@ function pintar(etiqueta) {
   $("#pick").hidden = delTipo.length < 2;
 
   const p = delTipo.find(x => x.etiqueta === elegido);
-  if (p) render(p);
+  if (!p) return;
+
+  // El filtro de día solo tiene sentido en periodos de varios días.
+  const dias = tipo === "dia" ? [] : diasDe(p.cuadros);
+  $("#pick-dia").hidden = dias.length < 2;
+  if (dias.length < 2) diaFiltrado = null;
+  if (diaFiltrado && !dias.includes(diaFiltrado)) diaFiltrado = null;
+  const selDia = $("#sel-dia");
+  selDia.innerHTML = `<option value="">${TODO_EL[tipo] || "Todo el periodo"}</option>` +
+    dias.map(d => `<option value="${d}">${d.slice(8, 10)}/${d.slice(5, 7)}</option>`).join("");
+  selDia.value = diaFiltrado || "";
+
+  render(p);
 }
 
-$("#sel").addEventListener("change", e => pintar(e.target.value));
+$("#sel").addEventListener("change", e => { diaFiltrado = null; pintar(e.target.value); });
+$("#sel-dia").addEventListener("change", e => {
+  diaFiltrado = e.target.value || null;
+  pintar($("#sel").value);
+});
 
 if (!PERIODOS.length) {
   $("#foco-t").textContent = "Sin periodos en el histórico";

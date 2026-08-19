@@ -183,3 +183,53 @@ def test_no_se_alerta_a_quien_no_es_asesor_activo():
 
 def test_cruce_calcula_gestiones_por_dia():
     assert _cruce_de({}, {}).loc["Ana", "Gestiones por día"] == 20.0   # 400 / 20
+
+
+# ---------------------------------------------------------------------------
+# Ocupación: el número que más veces se ha desviado entre fuentes.
+# ---------------------------------------------------------------------------
+
+def _fila_agente(nombre, periodo, login_seg, ocupacion):
+    return {"agent_name": nombre, "Periodo": periodo, "login_time_seg": login_seg,
+            "ready_time_seg": 0, "inbound_time_seg": 0, "outbound_time_seg": 0,
+            "acw_time_seg": 0, "aux_time_seg": 0, "ring_time_seg": 0,
+            "calls": 0, "hits": 0, "rpc": 0,
+            "ocupacion": ocupacion, "fecha": periodo}
+
+
+def test_ocupacion_se_pondera_por_tiempo_logueado():
+    """Con agent_8 son 24 filas por agente y las horas sin conexión traen
+    ocupación 0. Promediarlas planas hundía la cifra (26 % donde el informe
+    del día decía 67 %), así que la media va ponderada por login."""
+    horas = pd.DataFrame([
+        _fila_agente("ANA", "2026-08-12", 3600, 80.0),   # una hora al 80 %
+        _fila_agente("ANA", "2026-08-12", 1800, 40.0),   # media hora al 40 %
+        _fila_agente("ANA", "2026-08-12", 0, 0.0),       # hora sin conexión
+    ])
+    fila = gestion.tiempos_por_agente(horas, {("2026-08-12", "ANA"): 1})
+    # (80*3600 + 40*1800) / 5400 = 66,7 — no el 40 % del promedio plano.
+    assert fila.loc[0, "Ocupación %"] == 66.7
+
+
+def test_ocupacion_de_una_sola_fila_es_la_de_wolkvox():
+    """Con agent_1, que trae una fila por agente, ponderar no debe alterar
+    el número que ya calculó el proveedor."""
+    dia = pd.DataFrame([_fila_agente("ANA", "2026-08-12", 28800, 67.4)])
+    fila = gestion.tiempos_por_agente(dia, {("2026-08-12", "ANA"): 1})
+    assert fila.loc[0, "Ocupación %"] == 67.4
+
+
+def test_por_dia_prefiere_agent_1_sobre_agent_8_para_los_tiempos():
+    """Su ocupación no es reconstruible desde las horas: Wolkvox la calcula
+    con otro denominador. Si llega agent_1 día a día, manda ese."""
+    horas = pd.DataFrame([_fila_agente("ANA", "2026-08-12", 3600, 20.0)])
+    dias = pd.DataFrame([_fila_agente("ANA", "2026-08-12", 3600, 67.4)])
+    vacio = pd.DataFrame()
+
+    cuadros = gestion.por_dia(horas, vacio, vacio, vacio, vacio, {}, {},
+                              agente_dia=dias)
+    assert cuadros["tiempos_dia"].loc[0, "Ocupación %"] == 67.4
+
+    # Sin agent_1 sigue funcionando con agent_8, que es mejor que nada.
+    solo_horas = gestion.por_dia(horas, vacio, vacio, vacio, vacio, {}, {})
+    assert solo_horas["tiempos_dia"].loc[0, "Ocupación %"] == 20.0
