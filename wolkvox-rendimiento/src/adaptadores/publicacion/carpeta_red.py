@@ -70,7 +70,7 @@ def _del_mismo_periodo(carpeta: Path, etiqueta: str) -> list[Path]:
     """Archivos ya publicados de ese periodo, incluidos los cortes intradía.
 
     Se compara con expresión regular y no con comodín a propósito: el patrón
-    `gestion_wolkbox_2026-08*` casaría también con `2026-08-18_1431`, y el
+    `gestion_wolkvox_2026-08*` casaría también con `2026-08-18_1431`, y el
     informe mensual borraría los diarios.
     """
     patron = re.compile(rf"^{PREFIJO}_{re.escape(etiqueta)}(_\d{{4}})?\.xlsx$")

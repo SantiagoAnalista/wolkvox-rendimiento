@@ -42,7 +42,7 @@ HOJAS = [
 
 # Prefijo de todo informe publicado. Una sola definición: la usan la
 # retención local, la publicación en red y sus expresiones regulares.
-PREFIJO = "gestion_wolkbox"
+PREFIJO = "gestion_wolkvox"
 
 def _escribir_tabla(ws, df: pd.DataFrame, fila_inicio: int = 1, filtro: bool = True) -> int:
     """Escribe el DataFrame con encabezado y devuelve la última fila usada."""

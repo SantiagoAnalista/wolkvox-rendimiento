@@ -56,7 +56,7 @@ def test_una_ruta_sin_marcadores_se_usa_tal_cual():
 
 def test_publicar_crea_la_carpeta_del_mes_si_no_existe(tmp_path):
     """Septiembre todavía no tiene su carpeta: la primera corrida la crea."""
-    excel = tmp_path / "gestion_wolkbox_2026-09-01_0810.xlsx"
+    excel = tmp_path / "gestion_wolkvox_2026-09-01_0810.xlsx"
     excel.write_text("datos", encoding="utf-8")
     destino = carpeta_red.publicar_excel(excel, "2026-09-01", plantilla(tmp_path),
                                          date(2026, 9, 1))
@@ -68,51 +68,51 @@ def test_publicar_crea_la_carpeta_del_mes_si_no_existe(tmp_path):
 def test_un_corte_nuevo_reemplaza_al_anterior_del_mismo_dia(tmp_path):
     """Ocho corridas al día dejan un solo archivo, no ocho."""
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-18_0810.xlsx",
-          "gestion_wolkbox_2026-08-18_1210.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-18_1610.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-08-18_0810.xlsx",
+          "gestion_wolkvox_2026-08-18_1210.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-18_1610.xlsx"
     excel.write_text("nuevo", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08-18", plantilla(tmp_path), date(2026, 8, 18))
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-18_1610.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-18_1610.xlsx"]
 
 
 def test_el_informe_del_dia_no_se_lleva_por_delante_el_de_la_semana(tmp_path):
-    """El comodín 'gestion_wolkbox_2026-08*' casaría con los diarios: por eso
+    """El comodín 'gestion_wolkvox_2026-08*' casaría con los diarios: por eso
     la comparación es por expresión regular sobre la etiqueta completa."""
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-S33.xlsx", "gestion_wolkbox_2026-08.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-18_1610.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-S33.xlsx", "gestion_wolkvox_2026-08.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-18_1610.xlsx"
     excel.write_text("nuevo", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08-18", plantilla(tmp_path), date(2026, 8, 18))
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-18_1610.xlsx",
-                                "gestion_wolkbox_2026-08.xlsx",
-                                "gestion_wolkbox_2026-S33.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-18_1610.xlsx",
+                                "gestion_wolkvox_2026-08.xlsx",
+                                "gestion_wolkvox_2026-S33.xlsx"]
 
 
 def test_el_mensual_tampoco_borra_los_diarios(tmp_path):
     """El caso simétrico: la etiqueta '2026-08' no puede casar con '2026-08-18'."""
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-18_1610.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-08-18_1610.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08.xlsx"
     excel.write_text("mensual", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08", plantilla(tmp_path), date(2026, 8, 31))
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-18_1610.xlsx",
-                                "gestion_wolkbox_2026-08.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-18_1610.xlsx",
+                                "gestion_wolkvox_2026-08.xlsx"]
 
 
 def test_un_archivo_abierto_en_excel_no_tumba_la_publicacion(tmp_path, monkeypatch):
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-18_0810.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-18_1610.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-08-18_0810.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-18_1610.xlsx"
     excel.write_text("nuevo", encoding="utf-8")
 
     original = Path.unlink
 
     def unlink_falla(self, *a, **kw):
-        if self.name == "gestion_wolkbox_2026-08-18_0810.xlsx":
+        if self.name == "gestion_wolkvox_2026-08-18_0810.xlsx":
             raise PermissionError("lo tiene abierto Excel")
         return original(self, *a, **kw)
 
@@ -120,11 +120,11 @@ def test_un_archivo_abierto_en_excel_no_tumba_la_publicacion(tmp_path, monkeypat
     destino = carpeta_red.publicar_excel(excel, "2026-08-18", plantilla(tmp_path),
                                          date(2026, 8, 18))
     assert destino.exists()                                   # lo nuevo sí quedó
-    assert (carpeta / "gestion_wolkbox_2026-08-18_0810.xlsx").exists()
+    assert (carpeta / "gestion_wolkvox_2026-08-18_0810.xlsx").exists()
 
 
 def test_no_deja_temporales(tmp_path):
-    excel = tmp_path / "gestion_wolkbox_2026-08-18_1610.xlsx"
+    excel = tmp_path / "gestion_wolkvox_2026-08-18_1610.xlsx"
     excel.write_text("x", encoding="utf-8")
     destino = carpeta_red.publicar_excel(excel, "2026-08-18", plantilla(tmp_path),
                                          date(2026, 8, 18))
@@ -146,12 +146,12 @@ def test_el_tablero_se_reemplaza(tmp_path):
 
 def test_publicar_el_tablero_no_toca_los_excel(tmp_path):
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-18_1610.xlsx")
+    crear(carpeta, "gestion_wolkvox_2026-08-18_1610.xlsx")
     nuevo = tmp_path / "tablero.html"
     nuevo.write_text("nuevo", encoding="utf-8")
 
     carpeta_red.publicar_tablero(nuevo, plantilla(tmp_path), date(2026, 8, 18))
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-18_1610.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-18_1610.xlsx"]
 
 
 # ── Retención de los informes diarios ────────────────────────────────────
@@ -159,37 +159,37 @@ def test_publicar_el_tablero_no_toca_los_excel(tmp_path):
 def test_solo_se_conservan_los_tres_diarios_mas_recientes(tmp_path):
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
     crear(carpeta,
-          "gestion_wolkbox_2026-08-15.xlsx",
-          "gestion_wolkbox_2026-08-16.xlsx",
-          "gestion_wolkbox_2026-08-17.xlsx",
-          "gestion_wolkbox_2026-08-18.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-19_0816.xlsx"
+          "gestion_wolkvox_2026-08-15.xlsx",
+          "gestion_wolkvox_2026-08-16.xlsx",
+          "gestion_wolkvox_2026-08-17.xlsx",
+          "gestion_wolkvox_2026-08-18.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-19_0816.xlsx"
     excel.write_text("nuevo", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path),
                                date(2026, 8, 19), dias_diarios=3)
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-17.xlsx",
-                                "gestion_wolkbox_2026-08-18.xlsx",
-                                "gestion_wolkbox_2026-08-19_0816.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-17.xlsx",
+                                "gestion_wolkvox_2026-08-18.xlsx",
+                                "gestion_wolkvox_2026-08-19_0816.xlsx"]
 
 
 def test_la_retencion_diaria_no_toca_semanales_ni_mensuales(tmp_path):
     """La carpeta esta organizada por mes: ese es justamente su archivo."""
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
     crear(carpeta,
-          "gestion_wolkbox_2026-08-10.xlsx", "gestion_wolkbox_2026-08-11.xlsx",
-          "gestion_wolkbox_2026-08-12.xlsx", "gestion_wolkbox_2026-08-13.xlsx",
-          "gestion_wolkbox_2026-S32.xlsx", "gestion_wolkbox_2026-S33.xlsx",
-          "gestion_wolkbox_2026-07.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-19_0816.xlsx"
+          "gestion_wolkvox_2026-08-10.xlsx", "gestion_wolkvox_2026-08-11.xlsx",
+          "gestion_wolkvox_2026-08-12.xlsx", "gestion_wolkvox_2026-08-13.xlsx",
+          "gestion_wolkvox_2026-S32.xlsx", "gestion_wolkvox_2026-S33.xlsx",
+          "gestion_wolkvox_2026-07.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-19_0816.xlsx"
     excel.write_text("nuevo", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path),
                                date(2026, 8, 19), dias_diarios=3)
     quedan = nombres(carpeta)
-    assert "gestion_wolkbox_2026-S32.xlsx" in quedan
-    assert "gestion_wolkbox_2026-S33.xlsx" in quedan
-    assert "gestion_wolkbox_2026-07.xlsx" in quedan
+    assert "gestion_wolkvox_2026-S32.xlsx" in quedan
+    assert "gestion_wolkvox_2026-S33.xlsx" in quedan
+    assert "gestion_wolkvox_2026-07.xlsx" in quedan
     assert len([n for n in quedan if DIARIOS_RE.match(n)]) == 3
 
 
@@ -206,30 +206,30 @@ def test_reprocesar_un_dia_viejo_no_desplaza_a_los_recientes(tmp_path):
     corrida, que ya lo purga.
     """
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-17.xlsx",
-          "gestion_wolkbox_2026-08-18.xlsx", "gestion_wolkbox_2026-08-19.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-01.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-08-17.xlsx",
+          "gestion_wolkvox_2026-08-18.xlsx", "gestion_wolkvox_2026-08-19.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-01.xlsx"
     excel.write_text("backfill", encoding="utf-8")
 
     carpeta_red.publicar_excel(excel, "2026-08-01", plantilla(tmp_path),
                                date(2026, 8, 1), dias_diarios=3)
-    assert "gestion_wolkbox_2026-08-19.xlsx" in nombres(carpeta)
+    assert "gestion_wolkvox_2026-08-19.xlsx" in nombres(carpeta)
 
     # La corrida siguiente lo deja en tres.
-    otro = tmp_path / "gestion_wolkbox_2026-08-20.xlsx"
+    otro = tmp_path / "gestion_wolkvox_2026-08-20.xlsx"
     otro.write_text("x", encoding="utf-8")
     carpeta_red.publicar_excel(otro, "2026-08-20", plantilla(tmp_path),
                                date(2026, 8, 20), dias_diarios=3)
-    assert nombres(carpeta) == ["gestion_wolkbox_2026-08-18.xlsx",
-                                "gestion_wolkbox_2026-08-19.xlsx",
-                                "gestion_wolkbox_2026-08-20.xlsx"]
+    assert nombres(carpeta) == ["gestion_wolkvox_2026-08-18.xlsx",
+                                "gestion_wolkvox_2026-08-19.xlsx",
+                                "gestion_wolkvox_2026-08-20.xlsx"]
 
 
 def test_sin_limite_configurado_no_se_purga_nada(tmp_path):
     carpeta = tmp_path / "2026" / "08. Agosto" / "Infomes de Gestion"
-    crear(carpeta, "gestion_wolkbox_2026-08-10.xlsx", "gestion_wolkbox_2026-08-11.xlsx",
-          "gestion_wolkbox_2026-08-12.xlsx", "gestion_wolkbox_2026-08-13.xlsx")
-    excel = tmp_path / "gestion_wolkbox_2026-08-19_0816.xlsx"
+    crear(carpeta, "gestion_wolkvox_2026-08-10.xlsx", "gestion_wolkvox_2026-08-11.xlsx",
+          "gestion_wolkvox_2026-08-12.xlsx", "gestion_wolkvox_2026-08-13.xlsx")
+    excel = tmp_path / "gestion_wolkvox_2026-08-19_0816.xlsx"
     excel.write_text("x", encoding="utf-8")
     carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path), date(2026, 8, 19))
     assert len(nombres(carpeta)) == 5
