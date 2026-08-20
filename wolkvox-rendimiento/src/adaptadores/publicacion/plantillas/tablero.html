@@ -23,6 +23,10 @@
   --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
   --r:10px; --shadow:0 1px 2px rgba(11,11,11,.05);
+  /* Alto único de las tarjetas de media rejilla. Sale del gráfico más alto
+     que se pinta completo sin desplazar (la curva horaria, 300px) más el
+     encabezado; los que crecen con el número de asesores se desplazan. */
+  --alto-card:460px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -103,13 +107,34 @@ select{font:500 13.5px var(--sans);color:var(--ink);background:var(--surface);
 .delta.up{color:var(--delta-good)} .delta.down{color:var(--delta-bad)} .delta.flat{color:var(--muted)}
 
 .grid{display:grid;gap:12px;margin-top:12px;grid-template-columns:repeat(12,1fr);
-      align-items:start}   /* cada tarjeta con su alto: abrir una tabla no estira a la vecina */
+      align-items:start}
 .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);
       padding:16px 18px 14px;box-shadow:var(--shadow);min-width:0;grid-column:span 12}
-.card.half{grid-column:span 6}
+
+/* Todas las tarjetas miden lo mismo. Un tablero donde cada carta tiene un
+   alto distinto se lee como una lista desordenada: el ojo sigue el borde en
+   vez de comparar las cifras. Lo que no cabe se desplaza DENTRO de la
+   tarjeta (.bd), así que abrir una tabla nunca mueve a la vecina. */
+.card.half{grid-column:span 6;height:var(--alto-card);display:flex;flex-direction:column}
+.card .bd{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
+          /* que se note que hay más abajo, sin barra permanente */
+          scrollbar-width:thin}
 @media (max-width:900px){.card.half{grid-column:span 12}}
 .card h3{margin:0;font-size:14.5px;font-weight:650;letter-spacing:-.01em}
 .card .sub{margin:3px 0 0;font-size:12.5px;color:var(--muted);max-width:72ch}
+.card .hd{display:flex;align-items:flex-start;gap:12px;flex:0 0 auto}
+.card .hd > div{min-width:0;flex:1}
+
+/* Tipificaciones es la excepción: son decenas de códigos y la comparación
+   entre ellos se pierde en una ventana de 6 columnas. Se despliega a ancho
+   completo bajo demanda; el resto sigue en su rejilla. */
+.card.ancha{grid-column:span 12;height:auto}
+.card.ancha .bd{overflow:visible}
+.btn-exp{font:600 12px/1 var(--sans);color:var(--ink-2);background:var(--surface-2);
+         border:1px solid var(--hair);border-radius:7px;padding:7px 11px;cursor:pointer;
+         white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn-exp:hover{color:var(--ink);border-color:var(--axis)}
+.btn-exp .g{font-size:10px}
 
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:12px 0 2px}
 .lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
@@ -329,8 +354,50 @@ const AX = { fill: "var(--muted)", "font-size": "11" };
 function card(cls, titulo, sub) {
   const c = document.createElement("section");
   c.className = "card" + (cls ? " " + cls : "");
-  c.innerHTML = `<div><h3>${esc(titulo)}</h3>` + (sub ? `<p class="sub">${esc(sub)}</p>` : "") + `</div>`;
+  c.innerHTML = `<div class="hd"><div><h3>${esc(titulo)}</h3>` +
+    (sub ? `<p class="sub">${esc(sub)}</p>` : "") + `</div></div>`;
   return c;
+}
+
+/** Mete todo lo que la tarjeta añadió después del encabezado en un cuerpo
+    desplazable, para que el alto fijo lo imponga la rejilla y no el
+    contenido. Se hace al final y no en `card()` porque cada gráfico va
+    colgando hijos del <section> a medida que se construye. */
+function cerrarCuerpos(g) {
+  g.querySelectorAll(".card.half").forEach(c => {
+    if (c.querySelector(":scope > .bd")) return;
+    const bd = document.createElement("div");
+    bd.className = "bd";
+    while (c.children.length > 1) bd.appendChild(c.children[1]);
+    c.appendChild(bd);
+  });
+}
+
+/** Botón para llevar una tarjeta a ancho completo. Solo lo lleva
+    Tipificaciones: es la única cuya lectura es comparar decenas de filas
+    entre sí, y a media rejilla los nombres de código se cortan.
+
+    El estado vive fuera de la tarjeta porque cambiar de periodo o de día
+    reconstruye la rejilla entera: sin esto, filtrar un día cerraría la
+    tarjeta que el coordinador acaba de abrir. */
+const expandidas = new Set();
+function botonExpandir(c, clave, etiqueta = "Expandir") {
+  const b = document.createElement("button");
+  b.className = "btn-exp";
+  b.type = "button";
+  const pinta = () => {
+    const abierta = expandidas.has(clave);
+    c.classList.toggle("ancha", abierta);
+    b.innerHTML = `<span class="g">${abierta ? "◱" : "◰"}</span>${abierta ? "Contraer" : etiqueta}`;
+    b.setAttribute("aria-expanded", String(abierta));
+  };
+  b.addEventListener("click", () => {
+    expandidas.has(clave) ? expandidas.delete(clave) : expandidas.add(clave);
+    pinta();
+  });
+  pinta();
+  c.querySelector(".hd").appendChild(b);
+  return b;
 }
 function legend(items) {
   const d = document.createElement("div");
@@ -871,6 +938,7 @@ function chartTipificaciones(tip) {
     "no son los mismos ni comparables, y sumarlos escondería que uno domina en un canal " +
     "y no existe en el otro. La parte sólida de cada barra es lo efectivo.");
   if (!tip.length) { c.appendChild(vacio("Sin gestiones tipificadas en el periodo.")); return c; }
+  botonExpandir(c, "tipificaciones");
 
   const barra = document.createElement("div");
   barra.className = "tv-filtro";
@@ -1150,6 +1218,7 @@ function render(p) {
   g.appendChild(chartAuxiliares(C.auxiliares || [], C.puntualidad_agente || []));
   g.appendChild(chartTipificaciones(C.tipificaciones || []));
   g.appendChild(semaforo(cruce, C.puntualidad_agente || [], U));
+  cerrarCuerpos(g);
 
   // ── Cabecera y pie ──
   const enlace = p.archivo_excel
