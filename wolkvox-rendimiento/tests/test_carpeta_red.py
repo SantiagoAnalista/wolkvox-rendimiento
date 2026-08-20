@@ -233,3 +233,20 @@ def test_sin_limite_configurado_no_se_purga_nada(tmp_path):
     excel.write_text("x", encoding="utf-8")
     carpeta_red.publicar_excel(excel, "2026-08-19", plantilla(tmp_path), date(2026, 8, 19))
     assert len(nombres(carpeta)) == 5
+
+
+def test_publicar_migra_el_prefijo_viejo_de_la_carpeta_de_red(tmp_path):
+    """Con el nombre viejo, ni el reemplazo por periodo ni la purga de
+    diarios los ven: se acumularían en la carpeta de la operación sin
+    caducar nunca."""
+    destino = tmp_path / "2026" / "08. Agosto"
+    destino.mkdir(parents=True)
+    (destino / "gestion_wolkbox_2026-08-19_0816.xlsx").write_text("x", encoding="utf-8")
+    (destino / "gestion_wolkbox_2026-08-19_1201.xlsx").write_text("x", encoding="utf-8")
+
+    excel = tmp_path / "gestion_wolkvox_2026-08-19.xlsx"
+    excel.write_text("nuevo", encoding="utf-8")
+    carpeta_red.publicar_excel(excel, "2026-08-19", str(tmp_path / "{anio}" / "{mes}"),
+                               date(2026, 8, 19))
+
+    assert sorted(a.name for a in destino.glob("*.xlsx")) == ["gestion_wolkvox_2026-08-19.xlsx"]

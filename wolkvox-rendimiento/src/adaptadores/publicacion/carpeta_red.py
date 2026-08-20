@@ -29,6 +29,7 @@ import time
 from datetime import date
 from pathlib import Path
 
+from . import retencion
 from .excel_analisis import PREFIJO
 
 log = logging.getLogger(__name__)
@@ -90,6 +91,9 @@ def publicar_excel(excel: Path, etiqueta: str, plantilla: str, fecha: date,
     carpeta.mkdir(parents=True, exist_ok=True)
     destino = carpeta / excel.name
 
+    # Aquí también: con el nombre viejo, ni el reemplazo por periodo ni la
+    # purga de diarios los ven, y se acumularían sin caducar nunca.
+    retencion.migrar_prefijo(carpeta)
     _copiar(excel, destino)
     for viejo in _del_mismo_periodo(carpeta, etiqueta):
         if viejo == destino:

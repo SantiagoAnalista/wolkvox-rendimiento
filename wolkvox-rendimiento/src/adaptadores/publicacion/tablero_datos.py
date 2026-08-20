@@ -23,6 +23,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from .excel_analisis import PREFIJO
+from .retencion import PREFIJOS_HISTORICOS
+
 log = logging.getLogger(__name__)
 
 CARPETA = "tablero"
@@ -131,6 +134,42 @@ def guardar(payload: dict, ruta_salida: Path) -> Path:
     log.info("Tablero: periodo %s guardado (%d KB)", payload["etiqueta"],
              destino.stat().st_size // 1024)
     return destino
+
+
+def migrar_prefijo(ruta_salida: Path) -> list[Path]:
+    """Actualiza el nombre de maestra que guardaron los periodos antiguos.
+
+    El JSON de cada periodo lleva escrito el nombre del Excel al que enlaza,
+    tal como se llamaba el día que se generó. Al corregir el prefijo, esos
+    enlaces apuntan a archivos que ya no existen y el tablero los descarta:
+    el periodo queda sin "Detalle completo" aunque su maestra siga ahí.
+
+    Va junto a `retencion.migrar_prefijo`, que es quien renombra los Excel, y
+    se puede quitar a la vez que aquella.
+    """
+    carpeta = ruta_store(ruta_salida)
+    if not carpeta.exists():
+        return []
+
+    tocados = []
+    for archivo in carpeta.glob("*.json"):
+        try:
+            payload = json.loads(archivo.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning("Tablero: se ignora %s (%s)", archivo.name, e)
+            continue
+
+        nombre = payload.get("archivo_excel") or ""
+        viejo = next((p for p in PREFIJOS_HISTORICOS if nombre.startswith(p)), None)
+        if not viejo:
+            continue
+
+        payload["archivo_excel"] = nombre.replace(viejo, PREFIJO, 1)
+        archivo.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        log.info("Tablero: %s enlazaba a %s; ahora a %s",
+                 archivo.stem, nombre, payload["archivo_excel"])
+        tocados.append(archivo)
+    return tocados
 
 
 def _tipo(etiqueta: str) -> str:

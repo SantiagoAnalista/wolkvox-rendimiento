@@ -269,10 +269,11 @@ def analizar(desde: date, hasta: date, periodo: str = "mes",
         return 1
     log.info("%d informe(s) en %s", len(generados), cfg.ruta_salida)
 
-    # Consolida los cortes de las jornadas ya cerradas y aplica la retención,
-    # sin tocar lo que esta corrida acaba de escribir.
-    retencion.limpiar(cfg.ruta_salida, cfg.dias_excel, cfg.hora_cierre_jornada,
-                      recien_escritos=generados)
+    # Deja un solo archivo por día y aplica la retención, sin tocar lo que
+    # esta corrida acaba de escribir.
+    retencion.migrar_prefijo(cfg.ruta_salida)
+    tablero_datos.migrar_prefijo(cfg.ruta_tablero)
+    retencion.limpiar(cfg.ruta_salida, cfg.dias_excel, recien_escritos=generados)
 
     # Un solo HTML con todos los periodos del almacén, no solo los de esta
     # corrida: el coordinador conserva un único enlace y ve el histórico.

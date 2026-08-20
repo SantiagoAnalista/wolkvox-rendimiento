@@ -270,6 +270,43 @@ def test_la_plantilla_del_repo_existe_y_es_autocontenida():
     assert "src=\"http" not in html and "href=\"http" not in html
 
 
+# ── Alto de las tarjetas ─────────────────────────────────────────────────
+#
+# Son comprobaciones sobre el texto de la plantilla, no sobre el render: sin
+# navegador no se puede medir. Sirven para que un cambio de estilos no
+# deshaga en silencio la decisión de que todas las tarjetas midan lo mismo.
+
+def test_las_tarjetas_de_media_rejilla_tienen_un_alto_unico():
+    """Si una crece con su contenido, la fila se desalinea y el tablero se
+    lee como una lista y no como una comparación."""
+    html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
+    assert "--alto-card:" in html
+    assert "height:var(--alto-card)" in html
+
+
+def test_el_desbordamiento_se_queda_dentro_de_la_tarjeta():
+    """Lo que no cabe se desplaza en el cuerpo; nunca estira la tarjeta."""
+    html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
+    assert ".card .bd{flex:1;min-height:0;overflow-y:auto" in html
+    assert "function cerrarCuerpos" in html
+
+
+def test_solo_tipificaciones_se_puede_expandir():
+    """El botón es una excepción deliberada, no un patrón: si aparece en
+    otra tarjeta, vuelve el tablero de altos desiguales que se quitó."""
+    html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
+    llamadas = html.count("botonExpandir(") - html.count("function botonExpandir(")
+    assert llamadas == 1
+    assert 'botonExpandir(c, "tipificaciones")' in html
+
+
+def test_la_tarjeta_expandida_gana_al_alto_fijo():
+    """`.card.ancha` y `.card.half` tienen la misma especificidad: solo el
+    orden en la hoja decide, así que la excepción va después."""
+    html = tablero_html.PLANTILLA.read_text(encoding="utf-8")
+    assert html.index(".card.half{grid-column:span 6") < html.index(".card.ancha{")
+
+
 # ── Cortes intradía ──────────────────────────────────────────────────────
 
 def test_sin_corte_el_periodo_no_es_parcial():
@@ -358,3 +395,49 @@ def test_si_sigue_ocupado_tras_los_reintentos_la_corrida_falla(tmp_path, monkeyp
 
     with pytest.raises(PermissionError):
         tablero_html.generar([construir()], tmp_path)
+
+
+# ── Migración del prefijo en los enlaces guardados ───────────────────────
+
+def test_migrar_actualiza_el_enlace_a_la_maestra_renombrada(tmp_path):
+    """El JSON guarda el nombre del Excel tal como se llamaba ese día. Si no
+    se actualiza, el periodo pierde el 'Detalle completo' aunque su maestra
+    siga en la carpeta con el nombre nuevo."""
+    store = tablero_datos.ruta_store(tmp_path)
+    store.mkdir(parents=True)
+    (store / "2026-07.json").write_text(
+        json.dumps({"etiqueta": "2026-07", "archivo_excel": "gestion_wolkbox_2026-07.xlsx"}),
+        encoding="utf-8")
+
+    tablero_datos.migrar_prefijo(tmp_path)
+    p = json.loads((store / "2026-07.json").read_text(encoding="utf-8"))
+    assert p["archivo_excel"] == "gestion_wolkvox_2026-07.xlsx"
+
+
+def test_migrar_alcanza_al_nombre_original_del_proyecto(tmp_path):
+    store = tablero_datos.ruta_store(tmp_path)
+    store.mkdir(parents=True)
+    (store / "2026-08-18.json").write_text(
+        json.dumps({"etiqueta": "2026-08-18",
+                    "archivo_excel": "analisis_gestion_2026-08-18.xlsx"}),
+        encoding="utf-8")
+
+    tablero_datos.migrar_prefijo(tmp_path)
+    p = json.loads((store / "2026-08-18.json").read_text(encoding="utf-8"))
+    assert p["archivo_excel"] == "gestion_wolkvox_2026-08-18.xlsx"
+
+
+def test_migrar_no_toca_los_periodos_que_ya_estan_bien(tmp_path):
+    store = tablero_datos.ruta_store(tmp_path)
+    store.mkdir(parents=True)
+    (store / "2026-S33.json").write_text(
+        json.dumps({"etiqueta": "2026-S33", "archivo_excel": "gestion_wolkvox_2026-S33.xlsx"}),
+        encoding="utf-8")
+    (store / "2026-08-20.json").write_text(
+        json.dumps({"etiqueta": "2026-08-20", "archivo_excel": None}), encoding="utf-8")
+
+    assert tablero_datos.migrar_prefijo(tmp_path) == []
+
+
+def test_migrar_en_almacen_inexistente_no_falla(tmp_path):
+    assert tablero_datos.migrar_prefijo(tmp_path / "no-existe") == []

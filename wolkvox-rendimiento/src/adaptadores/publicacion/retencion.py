@@ -1,7 +1,7 @@
 """Limpieza de las maestras diarias.
 
 Cada corrida intradía escribe un Excel NUEVO con la hora del corte
-(`gestion_wolkbox_2026-08-17_1210.xlsx`) en vez de sobrescribir el anterior.
+(`gestion_wolkvox_2026-08-17_1210.xlsx`) en vez de sobrescribir el anterior.
 Es deliberado: en Windows, un `.xlsx` abierto por alguien queda tomado y
 `wb.save()` falla con PermissionError. Escribiendo un archivo que hace un
 segundo no existía, la colisión no puede ocurrir — no se maneja el error, se
@@ -10,15 +10,16 @@ elimina la posibilidad.
 El precio es acumular archivos, y de eso se encarga este módulo, que corre en
 cada ejecución:
 
-  1. Un día ya cerrado se consolida: se conserva un solo archivo y se borran
-     sus demás cortes. Gana el consolidado sin hora (el que escribe el job
-     diario a la mañana siguiente); si no existe, el corte más tardío.
+  1. **De cada día queda un solo archivo.** Gana el consolidado sin hora (el
+     que escribe el job de la mañana siguiente, y que cubre la jornada
+     entera); si no existe todavía, el corte más tardío.
   2. Lo que quede fuera de la ventana de retención se borra.
 
-Un día se da por cerrado si es anterior a hoy, si ya tiene su consolidado, o
-si alguno de sus cortes es de `hora_cierre` en adelante. Así la última corrida
-de la jornada limpia las anteriores sin necesidad de una bandera especial, y
-si esa corrida falla, cualquier ejecución posterior termina el trabajo.
+La consolidación no espera al cierre de la jornada: se hace en cada corrida.
+Escribir un archivo nuevo es lo que evita el bloqueo de Windows, pero no hay
+razón para conservar el anterior una vez existe uno más completo — a media
+mañana, tres cortes del mismo día solo obligan a coordinación a mirar la hora
+del nombre para saber cuál abrir.
 
 Los borrados que fallan (alguien tiene el archivo abierto) se registran y se
 saltan: el archivo sobrante es inofensivo y la siguiente corrida lo reintenta.
@@ -80,9 +81,9 @@ def _borrar(archivo: Path) -> bool:
         return False
 
 
-def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
+def limpiar(ruta: Path, dias: int = 3,
             hoy: date | None = None, recien_escritos: list[Path] | None = None) -> list[Path]:
-    """Consolida los días cerrados y aplica la retención. Devuelve lo borrado.
+    """Deja un solo archivo por día y aplica la retención. Devuelve lo borrado.
 
     `recien_escritos` son las maestras que produjo ESTA corrida, y quedan
     intocables. Sin eso, reprocesar un día viejo lo generaba y lo borraba
@@ -101,7 +102,6 @@ def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
 
     hoy = hoy or date.today()
     vigentes = {(hoy - timedelta(days=n)).isoformat() for n in range(dias)}
-    corte_min = hora_cierre * 60
     intocables = {p.resolve() for p in (recien_escritos or [])}
     borrable = lambda archivo: archivo.resolve() not in intocables
 
@@ -116,12 +116,6 @@ def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
         if len(cortes) < 2:
             continue
 
-        cerrado = (fecha < hoy.isoformat()
-                   or any(minuto is None for minuto, _ in cortes)
-                   or any(minuto >= corte_min for minuto, _ in cortes if minuto is not None))
-        if not cerrado:
-            continue                       # jornada en curso: se conservan todos
-
         conservado = _superviviente(cortes)
         for _, archivo in cortes:
             if archivo != conservado and borrable(archivo) and _borrar(archivo):
@@ -131,6 +125,46 @@ def limpiar(ruta: Path, dias: int = 3, hora_cierre: int = 18,
         log.info("Maestra: %d archivo(s) diarios eliminados (retención %d días)",
                  len(borrados), dias)
     return borrados
+
+
+# El prefijo estuvo mal escrito hasta agosto de 2026. Los archivos que
+# quedaron con el nombre viejo son invisibles para todo lo de arriba —el glob
+# y la expresión regular usan PREFIJO—, así que ni se consolidan ni caducan:
+# se quedarían para siempre. Se renombran en vez de borrarse porque entre
+# ellos hay semanas y meses que no tienen equivalente nuevo.
+PREFIJOS_HISTORICOS = ("gestion_wolkbox", "analisis_gestion")
+
+
+def migrar_prefijo(ruta: Path) -> list[Path]:
+    """Renombra las maestras del prefijo viejo. Devuelve las migradas.
+
+    Si el destino ya existe, el archivo viejo se borra: el nuevo lo generó
+    una corrida posterior y es al menos tan completo.
+
+    Se puede quitar cuando ninguna carpeta —local, de red o del servidor de
+    Jenkins— tenga ya archivos con los nombres antiguos.
+    """
+    if not ruta.exists():
+        return []
+
+    migrados = []
+    for viejo in PREFIJOS_HISTORICOS:
+        for archivo in ruta.glob(f"{viejo}_*.xlsx"):
+            if archivo.name.startswith("~$"):
+                continue
+            destino = archivo.with_name(archivo.name.replace(viejo, PREFIJO, 1))
+            try:
+                if destino.exists():
+                    archivo.unlink()
+                    log.info("Maestra: %s ya existe con el nombre nuevo; se borra el viejo",
+                             destino.name)
+                else:
+                    archivo.rename(destino)
+                    log.info("Maestra: %s -> %s", archivo.name, destino.name)
+                migrados.append(destino)
+            except OSError as e:
+                log.warning("Maestra: no se pudo migrar %s (%s)", archivo.name, e)
+    return migrados
 
 
 def vigentes(ruta: Path) -> set[str]:

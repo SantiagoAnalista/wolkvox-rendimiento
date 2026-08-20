@@ -321,24 +321,34 @@ ocho corridas al día y coordinación consultando el detalle, eso pasa. La
 solución no es manejar el error sino que la colisión no pueda ocurrir:
 
 ```
-gestion_wolkvox_2026-08-17_0810.xlsx
-gestion_wolkvox_2026-08-17_1210.xlsx
-gestion_wolkvox_2026-08-17_1610.xlsx   <- el corte actual
+gestion_wolkvox_2026-08-17_1610.xlsx   <- hoy, el corte más reciente
 gestion_wolkvox_2026-08-16.xlsx        <- ayer, consolidado
+gestion_wolkvox_2026-08-15.xlsx        <- anteayer, consolidado
 ```
 
 Nadie puede tener abierto un archivo que hace un segundo no existía. El tablero
 enlaza al Excel del corte que está mostrando, así que el nombre largo no le
 estorba a nadie.
 
-`excel_purga.limpiar()` corre en cada ejecución y hace dos cosas: consolida los
-días ya cerrados —conserva un solo archivo por fecha y borra sus demás cortes— y
-aplica la retención de `DIAS_EXCEL`. Un día se da por cerrado si es anterior a
-hoy, si ya tiene su consolidado o si alguno de sus cortes es de
-`HORA_CIERRE_JORNADA` en adelante; así la corrida de las 18:10 limpia las
-anteriores sin bandera especial, y si esa corrida falla, cualquier ejecución
-posterior termina el trabajo. Un borrado que falla porque alguien tiene el
-archivo abierto se registra y se salta.
+**De cada día queda un solo archivo.** `retencion.limpiar()` corre en cada
+ejecución: deja el consolidado sin hora —el que escribe el job de la mañana
+siguiente, que cubre la jornada entera— o, mientras ese no exista, el corte más
+tardío; y aplica la retención de `DIAS_EXCEL`.
+
+La consolidación no espera al cierre de la jornada. Escribir un archivo nuevo es
+lo que evita el bloqueo de Windows, pero no hay razón para conservar el anterior
+una vez existe uno más completo: a media mañana, tres cortes del mismo día solo
+obligan a coordinación a mirar la hora del nombre para saber cuál abrir. Un
+borrado que falla porque alguien tiene el archivo abierto se registra y se
+salta; la siguiente corrida lo reintenta.
+
+`retencion.migrar_prefijo()` corre justo antes y renombra lo que quedó de
+cuando el prefijo estaba mal escrito (`gestion_wolkbox_`, `analisis_gestion_`).
+Sin eso esos archivos son invisibles para el glob: ni se consolidan ni caducan,
+y se quedarían para siempre. Se renombran y no se borran porque entre ellos hay
+semanas y meses sin equivalente nuevo. `tablero_datos.migrar_prefijo()` hace lo
+propio con el nombre de maestra que cada periodo guarda para enlazarla. Las dos
+se pueden quitar cuando ninguna carpeta tenga ya nombres antiguos.
 
 El tablero, en cambio, no corre ese riesgo: los navegadores leen el HTML y
 sueltan el archivo. Aun así la escritura reintenta tres veces, porque el
